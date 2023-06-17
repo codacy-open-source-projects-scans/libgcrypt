@@ -2186,9 +2186,11 @@ bench_kdf_init (struct bench_obj *obj)
 
   if (mode->algo == GCRY_KDF_PBKDF2)
     {
-      obj->min_bufsize = 2;
-      obj->max_bufsize = 2 * 32;
-      obj->step_size = 2;
+      int n = in_fips_mode ? 1000 : 2;
+
+      obj->min_bufsize = n;
+      obj->max_bufsize = n * 32;
+      obj->step_size = n;
     }
 
   obj->num_measure_repetitions = num_measurement_repetitions;
@@ -2212,8 +2214,9 @@ bench_kdf_do_bench (struct bench_obj *obj, void *buf, size_t buflen)
 
   if (mode->algo == GCRY_KDF_PBKDF2)
     {
-      gcry_kdf_derive("qwerty", 6, mode->algo, mode->subalgo, "01234567", 8,
-		      buflen, sizeof(keybuf), keybuf);
+      gcry_kdf_derive("qwertyuiop", 10, mode->algo, mode->subalgo,
+                      "0123456789ABCDEF", 16,
+                      buflen, sizeof(keybuf), keybuf);
     }
 }
 
@@ -2369,16 +2372,16 @@ ecc_algo_fips_allowed (int algo)
       case ECC_ALGO_NIST_P256:
       case ECC_ALGO_NIST_P384:
       case ECC_ALGO_NIST_P521:
-	return 1;
-      case ECC_ALGO_SECP256K1:
-      case ECC_ALGO_BRAINP256R1:
       case ECC_ALGO_ED25519:
       case ECC_ALGO_ED448:
+        return 1;
+      case ECC_ALGO_SECP256K1:
+      case ECC_ALGO_BRAINP256R1:
       case ECC_ALGO_X25519:
       case ECC_ALGO_X448:
       case ECC_ALGO_NIST_P192:
       default:
-	return 0;
+        return 0;
     }
 }
 
