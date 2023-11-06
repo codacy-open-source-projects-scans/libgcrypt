@@ -32,13 +32,7 @@
 #include "context.h"
 #include "ec-context.h"
 #include "ec-inline.h"
-
-
-/* These variables are used to generate masks from conditional operation
- * flag parameters.  Use of volatile prevents compiler optimizations from
- * converting AND-masking to conditional branches.  */
-static volatile mpi_limb_t vzero = 0;
-static volatile mpi_limb_t vone = 1;
+#include "const-time.h"
 
 
 static inline
@@ -147,8 +141,8 @@ _gcry_mpi_ec_nist192_mod (gcry_mpi_t w, mpi_ec_t ctx)
 
   s_is_negative = LO32_LIMB64(s[3]) >> 31;
 
-  mask2 = vzero - s_is_negative;
-  mask1 = s_is_negative - vone;
+  mask2 = ct_limb_gen_mask(s_is_negative);
+  mask1 = ct_limb_gen_inv_mask(s_is_negative);
 
   STORE64_COND(wp, 0, mask2, o[0], mask1, s[0]);
   STORE64_COND(wp, 1, mask2, o[1], mask1, s[1]);
@@ -270,8 +264,8 @@ _gcry_mpi_ec_nist224_mod (gcry_mpi_t w, mpi_ec_t ctx)
 
   s_is_negative = (HI32_LIMB64(s[3]) >> 31);
 
-  mask2 = vzero - s_is_negative;
-  mask1 = s_is_negative - vone;
+  mask2 = ct_limb_gen_mask(s_is_negative);
+  mask1 = ct_limb_gen_inv_mask(s_is_negative);
 
   STORE64_COND(wp, 0, mask2, d[0], mask1, s[0]);
   STORE64_COND(wp, 1, mask2, d[1], mask1, s[1]);
@@ -499,9 +493,9 @@ _gcry_mpi_ec_nist256_mod (gcry_mpi_t w, mpi_ec_t ctx)
 
   s_is_negative = LO32_LIMB64(s[4]) >> 31;
   d_is_negative = LO32_LIMB64(d[4]) >> 31;
-  mask3 = vzero - d_is_negative;
-  mask2 = (vzero - s_is_negative) & ~mask3;
-  mask1 = (s_is_negative - vone) & ~mask3;
+  mask3 = ct_limb_gen_mask(d_is_negative);
+  mask2 = ct_limb_gen_mask(s_is_negative) & ~mask3;
+  mask1 = ct_limb_gen_inv_mask(s_is_negative) & ~mask3;
 
   s[0] = LIMB_OR64(MASK_AND64(mask2, d[0]), MASK_AND64(mask1, s[0]));
   s[1] = LIMB_OR64(MASK_AND64(mask2, d[1]), MASK_AND64(mask1, s[1]));
@@ -770,8 +764,8 @@ _gcry_mpi_ec_nist384_mod (gcry_mpi_t w, mpi_ec_t ctx)
 	       p_mult[0 + 3][1], p_mult[0 + 3][0]);
 
   s_is_negative = LO32_LIMB64(s[6]) >> 31;
-  mask2 = vzero - s_is_negative;
-  mask1 = s_is_negative - vone;
+  mask2 = ct_limb_gen_mask(s_is_negative);
+  mask1 = ct_limb_gen_inv_mask(s_is_negative);
 
   STORE64_COND(wp, 0, mask2, d[0], mask1, s[0]);
   STORE64_COND(wp, 1, mask2, d[1], mask1, s[1]);
@@ -814,7 +808,7 @@ _gcry_mpi_ec_nist521_mod (gcry_mpi_t w, mpi_ec_t ctx)
   /* "mod p" */
   cy = _gcry_mpih_sub_n (wp, wp, ctx->p->d, wsize);
   _gcry_mpih_add_n (s, wp, ctx->p->d, wsize);
-  mpih_set_cond (wp, s, wsize, (cy != 0UL));
+  mpih_set_cond (wp, s, wsize, mpih_limb_is_not_zero (cy));
 
   w->nlimbs = wsize;
   MPN_NORMALIZE (wp, w->nlimbs);
