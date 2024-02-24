@@ -30,6 +30,46 @@
 #include "sntrup761.h"
 #include "kyber.h"
 
+
+/* Information about the the KEM algoithms for use by the s-expression
+ * interface.  */
+static const struct
+{
+  const char *name;           /* Name of the algo.  */
+  unsigned int namelen;       /* Only here to avoid strlen calls.  */
+  int algo;                   /* KEM algo number.   */
+  unsigned int nbits;         /* Number of bits.    */
+  unsigned int fips:1;        /* True if this is a FIPS140-3 approved KEM. */
+  int pubkey_len;             /* Length of the public key.  */
+  int seckey_len;             /* Length of the secret key.  */
+} kem_infos[] =
+  {
+    { "sntrup761", 9, GCRY_KEM_SNTRUP761,  761, 0,
+      GCRY_KEM_SNTRUP761_PUBKEY_LEN, GCRY_KEM_SNTRUP761_SECKEY_LEN },
+    { "kyber512",  8, GCRY_KEM_MLKEM512,   512, 0,
+      GCRY_KEM_MLKEM512_PUBKEY_LEN,  GCRY_KEM_MLKEM512_SECKEY_LEN },
+    { "kyber768",  8, GCRY_KEM_MLKEM768,   768, 1,
+      GCRY_KEM_MLKEM768_PUBKEY_LEN,  GCRY_KEM_MLKEM768_SECKEY_LEN },
+    { "kyber1024", 9, GCRY_KEM_MLKEM1024, 1024, 1,
+      GCRY_KEM_MLKEM1024_PUBKEY_LEN, GCRY_KEM_MLKEM1024_SECKEY_LEN },
+    { NULL }
+  };
+
+/* This is a short version of kem_infos from above.  It is required
+ * for the algoithm module interface.  Keep in sync.  */
+static const char *kem_names[] =
+  {
+    "sntrup761",
+    "kyber512",
+    "kyber768",
+    "kyber1024",
+    NULL,
+  };
+
+
+
+
+/* Helper for sntrup761.  */
 static void
 sntrup761_random (void *ctx, size_t length, uint8_t *dst)
 {
@@ -37,6 +77,7 @@ sntrup761_random (void *ctx, size_t length, uint8_t *dst)
 
   _gcry_randomize (dst, length, GCRY_STRONG_RANDOM);
 }
+
 
 gcry_err_code_t
 _gcry_kem_keypair (int algo,
@@ -46,25 +87,41 @@ _gcry_kem_keypair (int algo,
   switch (algo)
     {
     case GCRY_KEM_SNTRUP761:
-      (void)pubkey; (void)seckey;
       if (seckey_len != GCRY_KEM_SNTRUP761_SECKEY_LEN
           || pubkey_len != GCRY_KEM_SNTRUP761_PUBKEY_LEN)
         return GPG_ERR_INV_ARG;
       sntrup761_keypair (pubkey, seckey, NULL, sntrup761_random);
-      return GPG_ERR_NO_ERROR;
+      return 0;
+
     case GCRY_KEM_MLKEM512:
-    case GCRY_KEM_MLKEM768:
-    case GCRY_KEM_MLKEM1024:
+      if (seckey_len != GCRY_KEM_MLKEM512_SECKEY_LEN
+          || pubkey_len != GCRY_KEM_MLKEM512_PUBKEY_LEN)
+        return GPG_ERR_INV_ARG;
       kyber_keypair (algo, pubkey, seckey);
-      return GPG_ERR_NO_ERROR;
+      return 0;
+
+    case GCRY_KEM_MLKEM768:
+      if (seckey_len != GCRY_KEM_MLKEM768_SECKEY_LEN
+          || pubkey_len != GCRY_KEM_MLKEM768_PUBKEY_LEN)
+        return GPG_ERR_INV_ARG;
+      kyber_keypair (algo, pubkey, seckey);
+      return 0;
+
+    case GCRY_KEM_MLKEM1024:
+      if (seckey_len != GCRY_KEM_MLKEM1024_SECKEY_LEN
+          || pubkey_len != GCRY_KEM_MLKEM1024_PUBKEY_LEN)
+        return GPG_ERR_INV_ARG;
+      kyber_keypair (algo, pubkey, seckey);
+      return 0;
+
     case GCRY_KEM_DHKEM25519:
-      return GPG_ERR_NOT_IMPLEMENTED;
     case GCRY_KEM_OPENPGP_X25519:
       return GPG_ERR_NOT_IMPLEMENTED;
-    default:
-      return GPG_ERR_UNKNOWN_ALGORITHM;
     }
+
+  return GPG_ERR_UNKNOWN_ALGORITHM;
 }
+
 
 gcry_err_code_t
 _gcry_kem_encap (int algo,
@@ -76,7 +133,6 @@ _gcry_kem_encap (int algo,
   switch (algo)
     {
     case GCRY_KEM_SNTRUP761:
-      (void)pubkey; (void)ciphertext; (void)shared;
       if (optional != NULL || optional_len != 0)
         return GPG_ERR_INV_VALUE;
       if (pubkey_len != GCRY_KEM_SNTRUP761_PUBKEY_LEN
@@ -85,6 +141,7 @@ _gcry_kem_encap (int algo,
         return GPG_ERR_INV_VALUE;
       sntrup761_enc (ciphertext, shared, pubkey, NULL, sntrup761_random);
       return GPG_ERR_NO_ERROR;
+
     case GCRY_KEM_MLKEM512:
     case GCRY_KEM_MLKEM768:
     case GCRY_KEM_MLKEM1024:
@@ -92,16 +149,19 @@ _gcry_kem_encap (int algo,
         return GPG_ERR_INV_VALUE;
       kyber_encap (algo, ciphertext, shared, pubkey);
       return GPG_ERR_NO_ERROR;
+
     case GCRY_KEM_DHKEM25519:
       if (optional != NULL)
         return GPG_ERR_INV_VALUE;
       return GPG_ERR_NOT_IMPLEMENTED;
+
     case GCRY_KEM_OPENPGP_X25519:
       return GPG_ERR_NOT_IMPLEMENTED;
-    default:
-      return GPG_ERR_UNKNOWN_ALGORITHM;
+
     }
+  return GPG_ERR_UNKNOWN_ALGORITHM;
 }
+
 
 gcry_err_code_t
 _gcry_kem_decap (int algo,
@@ -113,7 +173,6 @@ _gcry_kem_decap (int algo,
   switch (algo)
     {
     case GCRY_KEM_SNTRUP761:
-      (void)seckey; (void)ciphertext; (void)shared;
       if (optional != NULL || optional_len != 0)
         return GPG_ERR_INV_VALUE;
       if (seckey_len != GCRY_KEM_SNTRUP761_SECKEY_LEN
@@ -122,6 +181,7 @@ _gcry_kem_decap (int algo,
         return GPG_ERR_INV_VALUE;
       sntrup761_dec (shared, ciphertext, seckey);
       return GPG_ERR_NO_ERROR;
+
     case GCRY_KEM_MLKEM512:
     case GCRY_KEM_MLKEM768:
     case GCRY_KEM_MLKEM1024:
@@ -129,11 +189,185 @@ _gcry_kem_decap (int algo,
         return GPG_ERR_INV_VALUE;
       kyber_decap (algo, shared, ciphertext, seckey);
       return GPG_ERR_NO_ERROR;
+
     case GCRY_KEM_DHKEM25519:
-      return GPG_ERR_NOT_IMPLEMENTED;
     case GCRY_KEM_OPENPGP_X25519:
       return GPG_ERR_NOT_IMPLEMENTED;
-    default:
-      return GPG_ERR_UNKNOWN_ALGORITHM;
+
     }
+  return GPG_ERR_UNKNOWN_ALGORITHM;
 }
+
+
+
+/* Generate a KEM keypair using the s-expression interface.  The
+ * GENPARAMS is prety simple in this case because it has only the
+ * algorithm name.  For example:
+ *   (kyber768)
+ */
+static gcry_err_code_t
+kem_generate (const gcry_sexp_t genparms, gcry_sexp_t *r_skey)
+{
+  gpg_err_code_t ec;
+  const char *algo;
+  size_t algolen;
+  const char *name;
+  int i;
+  int algoid;
+  void *pubkey = NULL;
+  void *seckey = NULL;
+  size_t pubkey_len, seckey_len;
+
+  algo = sexp_nth_data (genparms, 0, &algolen);
+  if (!algo || !algolen)
+    return GPG_ERR_PUBKEY_ALGO;
+  for (i=0; (name=kem_infos[i].name); i++)
+    if (kem_infos[i].namelen == algolen && !memcmp (name, algo, algolen))
+      break;
+  if (!name)
+    return GPG_ERR_WRONG_PUBKEY_ALGO;
+  algoid = kem_infos[i].algo;
+  pubkey_len = kem_infos[i].pubkey_len;
+  seckey_len = kem_infos[i].seckey_len;
+  /* (from here on we can jump to leave for cleanup)  */
+
+  /* Allocate buffers for the created key.  */
+  seckey = xtrycalloc_secure (1, seckey_len);
+  if (!seckey)
+    {
+      ec = gpg_err_code_from_syserror ();
+      goto leave;
+    }
+  pubkey = xtrycalloc (1, pubkey_len);
+  if (!pubkey)
+    {
+      ec = gpg_err_code_from_syserror ();
+      goto leave;
+    }
+
+  /* Generate key.  */
+  ec = _gcry_kem_keypair (algoid, pubkey, pubkey_len, seckey, seckey_len);
+  if (ec)
+    goto leave;
+
+  /* Put the key into an s-expression.  */
+  ec = sexp_build (r_skey, NULL,
+                   "(key-data"
+                   " (public-key"
+                   "  (%s(p%b)))"
+                   " (private-key"
+                   "  (%s(s%b))))",
+                   name,
+                   (int)pubkey_len, pubkey,
+                   name,
+                   (int)seckey_len, seckey);
+
+
+  /* FIXME: Add FIPS selftest.  */
+
+ leave:
+  if (seckey)
+    {
+      wipememory (seckey, seckey_len);
+      xfree (seckey);
+    }
+  xfree (pubkey);
+  return ec;
+}
+
+
+/* Compute a keygrip.  MD is the hash context which we are going to
+ * update.  KEYPARAM is an S-expression with the key parameters, this
+ * is usually a public key but may also be a secret key.  An example
+ * of such an S-expression is:
+ *
+ *     (kyber768
+ *       (p #4243...#)
+ *       (s #1718...#))
+ *
+ * What we hash is the algorithm name, \x00 annd the value of p.
+ * Including The algorithm name allows us to see a different key
+ * despite that it uses the same parameters.  Whether this is a good
+ * decision is not clear - but it should not harm.
+ */
+static gpg_err_code_t
+kem_compute_keygrip (gcry_md_hd_t md, gcry_sexp_t keyparam)
+{
+  gcry_sexp_t l1;
+  const char *algo, *data;
+  size_t algolen, datalen;
+  const char *name;
+  int i;
+
+  algo = sexp_nth_data (keyparam, 0, &algolen);
+  if (!algo || !algolen)
+    return GPG_ERR_PUBKEY_ALGO;
+  for (i=0; (name=kem_infos[i].name); i++)
+    if (kem_infos[i].namelen == algolen && !memcmp (name, algo, algolen))
+      break;
+  if (!name)
+    return GPG_ERR_WRONG_PUBKEY_ALGO;
+
+  _gcry_md_write (md, name, algolen+1); /* (also hash the nul) */
+
+  l1 = sexp_find_token (keyparam, "p", 1);
+  if (!l1)
+    return GPG_ERR_NO_OBJ;
+
+  data = sexp_nth_data (l1, 1, &datalen);
+  if (!data)
+    {
+      sexp_release (l1);
+      return GPG_ERR_NO_OBJ;
+    }
+
+  _gcry_md_write (md, data, datalen);
+  sexp_release (l1);
+
+  return 0;
+}
+
+
+/* Return the number of bits for the key described by PARMS.  On error
+ * 0 is returned. */
+static unsigned int
+kem_get_nbits (gcry_sexp_t keyparam)
+{
+  const char *algo;
+  size_t algolen;
+  const char *name;
+  int i;
+
+  algo = sexp_nth_data (keyparam, 0, &algolen);
+  if (!algo || !algolen)
+    return 0;  /* GPG_ERR_PUBKEY_ALGO */
+  for (i=0; (name=kem_infos[i].name); i++)
+    if (kem_infos[i].namelen == algolen && !memcmp (name, algo, algolen))
+      break;
+  if (!name)
+    return 0;  /* GPG_ERR_WRONG_PUBKEY_ALGO */
+
+  return kem_infos[i].nbits;
+}
+
+
+/* Generic structure to represent some KEM algorithms in our public
+ * key system.  */
+gcry_pk_spec_t _gcry_pubkey_spec_kem =
+  {
+    GCRY_PK_KEM, { 0, 0 },
+    GCRY_PK_USAGE_ENCR,
+    "KEM", kem_names,
+    "p", "s", "k", "", "p",
+    kem_generate,
+    NULL,  /* kem_check_secret_key */
+    NULL,  /* encrypt_raw - Use gcry_kem_encap instead.  */
+    NULL,  /* decrypt_raw - Use gcry_kem_decap unstead.  */
+    NULL,  /* sign */
+    NULL,  /* verify */
+    kem_get_nbits,
+    NULL,  /* selftests */
+    kem_compute_keygrip,
+    NULL,  /* get_curve */
+    NULL   /* get_curve_param */
+  };
