@@ -256,10 +256,11 @@ kem_generate (const gcry_sexp_t genparms, gcry_sexp_t *r_skey)
                    " (public-key"
                    "  (%s(p%b)))"
                    " (private-key"
-                   "  (%s(s%b))))",
+                   "  (%s(p%b)(s%b))))",
                    name,
                    (int)pubkey_len, pubkey,
                    name,
+                   (int)pubkey_len, pubkey,
                    (int)seckey_len, seckey);
 
 
