@@ -1710,25 +1710,34 @@ void gcry_kdf_close (gcry_kdf_hd_t h);
 enum gcry_kem_algos
   {
     GCRY_KEM_NONE = 0,
-    GCRY_KEM_SNTRUP761,
-    GCRY_KEM_CM6688128F,     /* Classic McEliece */
-    GCRY_KEM_MLKEM512,       /* aka Kyber512  */
-    GCRY_KEM_MLKEM768,       /* aka Kyber768  */
-    GCRY_KEM_MLKEM1024,      /* aka Kyber1024 */
+    GCRY_KEM_SNTRUP761  = 1,
+    GCRY_KEM_CM6688128F = 2,    /* Classic McEliece */
+    GCRY_KEM_MLKEM512   = 3,    /* aka Kyber512  */
+    GCRY_KEM_MLKEM768   = 4,    /* aka Kyber768  */
+    GCRY_KEM_MLKEM1024  = 5,    /* aka Kyber1024 */
     /* From here, ECC KEMs */
-    GCRY_KEM_RAW_X25519,     /* Using X25519 with Identity KDF */
-    GCRY_KEM_RAW_X448,       /* Using X448 with Identity KDF */
-    GCRY_KEM_RAW_BP256,
-    GCRY_KEM_RAW_BP384,
-    GCRY_KEM_DHKEM25519,     /* DHKEM with X25519, HKDF, and SHA256 */
-    GCRY_KEM_DHKEM448,       /* DHKEM with X448, HKDF, and SHA512 */
-    GCRY_KEM_OPENPGP_X25519, /* For OpenPGP, OPTIONAL (KDF parameters) is
-                                required, which defines hash and
-                                outputlen (shared secret length) */
-    GCRY_KEM_CMS_X25519_X963_SHA256, /* CMS with X25519, X963 and SHA256 */
-                          /* For CMS, OPTIONAL (sharedinfo) is required,
-                             which defines keylen for keywrap.  */
-    GCRY_KEM_CMS_X25519_HKDF_SHA256  /* CMS with X25519, HKDF and SHA256 */
+    GCRY_KEM_RAW_X25519 =31,    /* Using X25519 with Identity KDF */
+    GCRY_KEM_RAW_X448   =32,    /* Using X448 with Identity KDF */
+    GCRY_KEM_RAW_BP256  =33,
+    GCRY_KEM_RAW_BP384  =34,
+    GCRY_KEM_RAW_BP512  =35,
+    GCRY_KEM_RAW_P256R1 =36,
+    GCRY_KEM_RAW_P384R1 =37,
+    GCRY_KEM_RAW_P521R1 =38,
+    GCRY_KEM_DHKEM25519 =41,    /* DHKEM with X25519, HKDF, and SHA256 */
+    GCRY_KEM_DHKEM448 =  42,    /* DHKEM with X448, HKDF, and SHA512 */
+    GCRY_KEM_DHKEMP256R1=43,
+    GCRY_KEM_DHKEMP384R1=44,
+    GCRY_KEM_DHKEMP521R1=45,
+
+    /* For OpenPGP, OPTIONAL (KDF parameters) is required, which */
+    /* defines hash and outputlen (shared secret length)         */
+    GCRY_KEM_OPENPGP_X25519 = 61,
+    /* CMS with X25519, X963 and SHA256 */
+    GCRY_KEM_CMS_X25519_X963_SHA256 = 71,
+    /* For CMS, OPTIONAL (sharedinfo) is required, which defines
+     * keylen for keywrap.  CMS with X25519, HKDF and SHA256.  */
+    GCRY_KEM_CMS_X25519_HKDF_SHA256 = 72
   };
 
 /*
@@ -1997,7 +2006,7 @@ typedef int (*gcry_handler_no_mem_t) (void *, size_t, unsigned int);
 /* Type for fatal error handlers.  */
 typedef void (*gcry_handler_error_t) (void *, int, const char *);
 
-/* Type for logging handlers.  */
+/* Type for the deprecated log handler.  */
 typedef void (*gcry_handler_log_t) (void *, int, const char *, va_list);
 
 /* Certain operations can provide progress information.  This function
@@ -2021,9 +2030,9 @@ void gcry_set_outofcore_handler (gcry_handler_no_mem_t h, void *opaque);
    handler. */
 void gcry_set_fatalerror_handler (gcry_handler_error_t fnc, void *opaque);
 
-/* Register a function used instead of the internal logging
-   facility. */
-void gcry_set_log_handler (gcry_handler_log_t f, void *opaque);
+/* This function has no more effect.  */
+void gcry_set_log_handler (gcry_handler_log_t f,
+                           void *opaque) _GCRY_ATTR_INTERNAL;
 
 /* Reserved for future use. */
 void gcry_set_gettext_handler (const char *(*f)(const char*));

@@ -31,7 +31,7 @@
 #include "kem-ecc.h"
 
 #define ECC_PUBKEY_LEN_MAX 133
-#define ECC_SECKEY_LEN_MAX 64
+#define ECC_SECKEY_LEN_MAX 66
 
 static const char *
 algo_to_curve (int algo)
@@ -50,10 +50,22 @@ algo_to_curve (int algo)
       return "X448";
 
     case GCRY_KEM_RAW_BP256:
-      return "bp256";
+      return "brainpoolP256r1";
 
     case GCRY_KEM_RAW_BP384:
-      return "bp384";
+      return "brainpoolP384r1";
+
+    case GCRY_KEM_RAW_BP512:
+      return "brainpoolP512r1";
+
+    case GCRY_KEM_RAW_P256R1:
+      return "NIST P-256";
+
+    case GCRY_KEM_RAW_P384R1:
+      return "NIST P-384";
+
+    case GCRY_KEM_RAW_P521R1:
+      return "NIST P-521";
 
     default:
       return 0;
@@ -82,6 +94,18 @@ algo_to_seckey_len (int algo)
 
     case GCRY_KEM_RAW_BP384:
       return 48;
+
+    case GCRY_KEM_RAW_BP512:
+      return 64;
+
+    case GCRY_KEM_RAW_P256R1:
+      return 32;
+
+    case GCRY_KEM_RAW_P384R1:
+      return 48;
+
+    case GCRY_KEM_RAW_P521R1:
+      return 66;
 
     default:
       return 0;
@@ -271,7 +295,7 @@ _gcry_ecc_dhkem_decap (int algo, const void *seckey, const void *ciphertext,
 {
   gpg_err_code_t err;
   unsigned char ecdh[ECC_PUBKEY_LEN_MAX];
-  unsigned char pubkey_computed[ECC_SECKEY_LEN_MAX];
+  unsigned char pubkey_computed[ECC_PUBKEY_LEN_MAX];
   const unsigned char *pubkey;
   int curveid;
   int kem_algo;

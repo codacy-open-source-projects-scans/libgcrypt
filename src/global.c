@@ -102,6 +102,9 @@ global_init (void)
   if (!pre_syscall_func)
     gpgrt_get_syscall_clamp (&pre_syscall_func, &post_syscall_func);
 
+  /* Add a handler to be called after log_fatal and log_debug.  */
+  _gcry_set_gpgrt_post_log_handler ();
+
   /* See whether the system is in FIPS mode.  This needs to come as
      early as possible but after ATH has been initialized.  */
   _gcry_initialize_fips_mode (force_fips_mode);
@@ -307,12 +310,7 @@ print_config (const char *what, gpgrt_stream_t fp)
   if (!what || !strcmp (what, "cc"))
     {
       gpgrt_fprintf (fp, "cc:%d:%s:\n",
-#if GPGRT_VERSION_NUMBER >= 0x011b00 /* 1.27 */
-                     GPGRT_GCC_VERSION
-#else
-                     _GPG_ERR_GCC_VERSION /* Due to a bug in gpg-error.h.  */
-#endif
-                     ,
+                     GPGRT_GCC_VERSION,
 #ifdef __clang__
                      "clang:" __VERSION__
 #elif __GNUC__
@@ -356,6 +354,11 @@ print_config (const char *what, gpgrt_stream_t fp)
       gpgrt_fprintf (fp, "cpu-arch:"
 #if defined(HAVE_CPU_ARCH_X86)
                      "x86"
+#              ifdef __x86_64__
+                     ":amd64"
+#              else
+                     ":i386"
+#              endif
 #elif defined(HAVE_CPU_ARCH_ALPHA)
                      "alpha"
 #elif defined(HAVE_CPU_ARCH_SPARC)
