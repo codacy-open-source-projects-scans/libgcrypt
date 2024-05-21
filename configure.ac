@@ -1,7 +1,7 @@
 # Configure.ac script for Libgcrypt
 # Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2006,
 #               2007, 2008, 2009, 2011 Free Software Foundation, Inc.
-# Copyright (C) 2012-2021  g10 Code GmbH
+# Copyright (C) 2012-2024  g10 Code GmbH
 #
 # This file is part of Libgcrypt.
 #
@@ -3881,12 +3881,4 @@ cat <<G10EOF
    aligned attribute. Using this software may evoke bus errors.
 
 G10EOF
-fi
-
-if test -n "$gpl"; then
-  echo "Please note that you are building a version of Libgcrypt with"
-  echo "  $gpl"
-  echo "included.  These parts are licensed under the GPL and thus the"
-  echo "use of this library has to comply with the conditions of the GPL."
-  echo ""
 fi
