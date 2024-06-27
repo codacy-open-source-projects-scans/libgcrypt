@@ -65,7 +65,7 @@ vec_rol_elems(vector4x_u32 v, unsigned int idx)
 
 
 static ASM_FUNC_ATTR_INLINE vector4x_u32
-vec_load_le(unsigned long offset, const unsigned char *ptr)
+vec_load_le(unsigned long offset, const void *ptr)
 {
   vector4x_u32 vec;
   vec = vec_vsx_ld (offset, (const u32 *)ptr);
@@ -78,7 +78,7 @@ vec_load_le(unsigned long offset, const unsigned char *ptr)
 
 
 static ASM_FUNC_ATTR_INLINE void
-vec_store_le(vector4x_u32 vec, unsigned long offset, unsigned char *ptr)
+vec_store_le(vector4x_u32 vec, unsigned long offset, void *ptr)
 {
 #ifdef WORDS_BIGENDIAN
   vec = (vector4x_u32)vec_perm((vector16x_u8)vec, (vector16x_u8)vec,
@@ -330,7 +330,7 @@ chacha20_ppc_blocks4(u32 *state, byte *dst, const byte *src, size_t nblks)
       v15 = vec_splat(state3, 3);
 
       v12 += counters_0123;
-      v13 -= vec_cmplt(v12, counters_0123);
+      v13 -= (vector4x_u32)vec_cmplt(v12, counters_0123);
 
       for (i = 20; i > 0; i -= 2)
 	{
@@ -355,7 +355,7 @@ chacha20_ppc_blocks4(u32 *state, byte *dst, const byte *src, size_t nblks)
       tmp = vec_splat(state3, 0);
       tmp += counters_0123;
       v12 += tmp;
-      v13 += vec_splat(state3, 1) - vec_cmplt(tmp, counters_0123);
+      v13 += vec_splat(state3, 1) - (vector4x_u32)vec_cmplt(tmp, counters_0123);
       v14 += vec_splat(state3, 2);
       v15 += vec_splat(state3, 3);
       ADD_U64(state3, counter_4); /* update counter */
@@ -532,7 +532,7 @@ chacha20_poly1305_ppc_blocks4(u32 *state, byte *dst, const byte *src,
       v15 = vec_splat(state3, 3);
 
       v12 += counters_0123;
-      v13 -= vec_cmplt(v12, counters_0123);
+      v13 -= (vector4x_u32)vec_cmplt(v12, counters_0123);
 
       for (o = 20; o; o -= 10)
 	{
@@ -570,7 +570,7 @@ chacha20_poly1305_ppc_blocks4(u32 *state, byte *dst, const byte *src,
       tmp = vec_splat(state3, 0);
       tmp += counters_0123;
       v12 += tmp;
-      v13 += vec_splat(state3, 1) - vec_cmplt(tmp, counters_0123);
+      v13 += vec_splat(state3, 1) - (vector4x_u32)vec_cmplt(tmp, counters_0123);
       v14 += vec_splat(state3, 2);
       v15 += vec_splat(state3, 3);
       ADD_U64(state3, counter_4); /* update counter */
