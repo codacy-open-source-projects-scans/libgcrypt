@@ -335,7 +335,8 @@ enum gcry_ctl_cmds
     GCRYCTL_FIPS_SERVICE_INDICATOR_MAC = 85,
     GCRYCTL_FIPS_SERVICE_INDICATOR_MD = 86,
     GCRYCTL_FIPS_SERVICE_INDICATOR_PK_FLAGS = 87,
-    GCRYCTL_MD_CUSTOMIZE = 88
+    GCRYCTL_MD_CUSTOMIZE = 88,
+    GCRYCTL_FIPS_SERVICE_INDICATOR = 89
   };
 
 /* Perform various operations defined by CMD. */
@@ -1317,6 +1318,7 @@ enum gcry_md_flags
   {
     GCRY_MD_FLAG_SECURE = 1,  /* Allocate all buffers in "secure" memory.  */
     GCRY_MD_FLAG_HMAC   = 2,  /* Make an HMAC out of this algorithm.  */
+    GCRY_MD_FLAG_FIPS_NO_REJECTION = 4,  /* Don't reject for FIPS.  */
     GCRY_MD_FLAG_BUGEMU1 = 0x0100
   };
 
@@ -1973,6 +1975,9 @@ void gcry_log_debugpnt (const char *text,
 void gcry_log_debugsxp (const char *text, gcry_sexp_t sexp);
 
 char *gcry_get_config (int mode, const char *what);
+
+/* Convinience macro to access the FIPS service indicator.  */
+#define gcry_get_fips_service_indicator() gcry_control (GCRYCTL_FIPS_SERVICE_INDICATOR)
 
 /* Log levels used by the internal logging facility. */
 enum gcry_log_levels

@@ -216,7 +216,7 @@ available_ciphers="$available_ciphers sm4 aria"
 enabled_ciphers=""
 
 # Definitions for public-key ciphers.
-available_pubkey_ciphers="dsa elgamal rsa ecc"
+available_pubkey_ciphers="dsa elgamal rsa ecc kyber"
 enabled_pubkey_ciphers=""
 
 # Definitions for message digests.
@@ -1489,6 +1489,20 @@ if test "$gcry_cv_gcc_attribute_sysv_abi" = "yes" ; then
    fi
 fi
 
+#
+# Check whether compiler support '__thread' storage class specifier.
+#
+AC_CACHE_CHECK([whether compiler supports '__thread' storage class specifier],
+       [gcry_cv_gcc_storage_class__thread],
+       [gcry_cv_gcc_storage_class__thread=no
+        AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#include <stdlib.h>],
+          [static  __thread  int bar;]
+          )],
+          [gcry_cv_gcc_storage_class__thread=yes])])
+if test "$gcry_cv_gcc_storage_class__thread" = "yes" ; then
+   AC_DEFINE(HAVE_GCC_STORAGE_CLASS__THREAD,1,
+     [Defined if compiler supports "__thread" storage class specifier])
+fi
 
 # Restore flags.
 CFLAGS=$_gcc_cflags_save;
@@ -3054,6 +3068,9 @@ if test "$found" = "1" ; then
          # Build with the assembly implementation
          GCRYPT_ASM_CIPHERS="$GCRYPT_ASM_CIPHERS rijndael-aarch64.lo"
 
+         # Build with the vector permute SIMD128 implementation
+         GCRYPT_ASM_CIPHERS="$GCRYPT_ASM_CIPHERS rijndael-vp-aarch64.lo"
+
          # Build with the ARMv8/AArch64 CE implementation
          GCRYPT_ASM_CIPHERS="$GCRYPT_ASM_CIPHERS rijndael-armv8-ce.lo"
          GCRYPT_ASM_CIPHERS="$GCRYPT_ASM_CIPHERS rijndael-armv8-aarch64-ce.lo"
@@ -3364,6 +3381,14 @@ if test "$found" = "1" ; then
    AC_DEFINE(USE_ECC, 1, [Defined if this module should be included])
 fi
 
+LIST_MEMBER(kyber, $enabled_pubkey_ciphers)
+AM_CONDITIONAL(USE_KYBER, [test "$found" = "1"])
+if test "$found" = "1" ; then
+   GCRYPT_PUBKEY_CIPHERS="$GCRYPT_PUBKEY_CIPHERS \
+                          kyber.c"
+   AC_DEFINE(USE_KYBER, 1, [Defined if this module should be included])
+fi
+
 LIST_MEMBER(crc, $enabled_digests)
 if test "$found" = "1" ; then
    GCRYPT_DIGESTS="$GCRYPT_DIGESTS crc.lo"
@@ -3633,6 +3658,7 @@ case "${host}" in
     GCRYPT_ASM_DIGESTS="$GCRYPT_ASM_DIGESTS cipher-gcm-armv8-aarch32-ce.lo"
   ;;
   aarch64-*-*)
+    GCRYPT_ASM_DIGESTS="$GCRYPT_ASM_DIGESTS cipher-gcm-aarch64-simd.lo"
     GCRYPT_ASM_DIGESTS="$GCRYPT_ASM_DIGESTS cipher-gcm-armv8-aarch64-ce.lo"
   ;;
   powerpc64le-*-* | powerpc64-*-* | powerpc-*-*)
