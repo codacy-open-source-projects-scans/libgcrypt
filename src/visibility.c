@@ -736,7 +736,7 @@ gcry_cipher_open (gcry_cipher_hd_t *handle,
       *handle = NULL;
       return gpg_error (fips_not_operational ());
     }
-
+  fips_service_indicator_init ();
   return gpg_error (_gcry_cipher_open (handle, algo, mode, flags));
 }
 
@@ -751,7 +751,7 @@ gcry_cipher_setkey (gcry_cipher_hd_t hd, const void *key, size_t keylen)
 {
   if (!fips_is_operational ())
     return gpg_error (fips_not_operational ());
-
+  fips_service_indicator_init ();
   return gcry_error (_gcry_cipher_setkey (hd, key, keylen));
 }
 
@@ -946,7 +946,7 @@ gcry_mac_open (gcry_mac_hd_t *handle, int algo, unsigned int flags,
       *handle = NULL;
       return gpg_error (fips_not_operational ());
     }
-
+  fips_service_indicator_init ();
   return gpg_error (_gcry_mac_open (handle, algo, flags, ctx));
 }
 
@@ -962,8 +962,9 @@ gcry_mac_setkey (gcry_mac_hd_t hd, const void *key, size_t keylen)
   if (!fips_is_operational ())
     return gpg_error (fips_not_operational ());
 
+  fips_service_indicator_init ();
   if (fips_mode () && keylen < 14)
-    return GPG_ERR_INV_VALUE;
+    fips_service_indicator_mark_non_compliant ();
 
   return gpg_error (_gcry_mac_setkey (hd, key, keylen));
 }
@@ -1204,7 +1205,7 @@ gcry_md_open (gcry_md_hd_t *h, int algo, unsigned int flags)
       *h = NULL;
       return gpg_error (fips_not_operational ());
     }
-
+  fips_service_indicator_init ();
   return gpg_error (_gcry_md_open (h, algo, flags));
 }
 
@@ -1219,6 +1220,7 @@ gcry_md_enable (gcry_md_hd_t hd, int algo)
 {
   if (!fips_is_operational ())
     return gpg_error (fips_not_operational ());
+  fips_service_indicator_init ();
   return gpg_error (_gcry_md_enable (hd, algo));
 }
 
@@ -1382,8 +1384,9 @@ gcry_md_setkey (gcry_md_hd_t hd, const void *key, size_t keylen)
   if (!fips_is_operational ())
     return gpg_error (fips_not_operational ());
 
+  fips_service_indicator_init ();
   if (fips_mode () && keylen < 14)
-    return GPG_ERR_INV_VALUE;
+    fips_service_indicator_mark_non_compliant ();
 
   return gpg_error (_gcry_md_setkey (hd, key, keylen));
 }
