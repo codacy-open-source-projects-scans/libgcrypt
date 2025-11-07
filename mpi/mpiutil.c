@@ -55,8 +55,8 @@ _gcry_mpi_get_hw_config (void)
 }
 
 
-/* Initialize the MPI subsystem.  This is called early and allows to
-   do some initialization without taking care of threading issues.  */
+/* Initialize the MPI subsystem.  This is called early and allows
+   doing some initialization without taking care of threading issues.  */
 gcry_err_code_t
 _gcry_mpi_init (void)
 {
@@ -220,9 +220,7 @@ _gcry_mpi_free( gcry_mpi_t a )
     return;
   if ((a->flags & 32))
   {
-#if GPGRT_VERSION_NUMBER >= 0x011600  /* 1.22 */
     gpgrt_annotate_leaked_object(a);
-#endif
     return; /* Never release a constant. */
   }
   if ((a->flags & 4))

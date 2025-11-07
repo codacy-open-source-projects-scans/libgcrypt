@@ -43,6 +43,8 @@ test_kem_sntrup761 (int testno)
   uint8_t key1[GCRY_KEM_SNTRUP761_SHARED_LEN];
   uint8_t key2[GCRY_KEM_SNTRUP761_SHARED_LEN];
 
+  info (" Checking SNTRUP761.\n");
+
   err = gcry_kem_genkey (GCRY_KEM_SNTRUP761,
                          pubkey, GCRY_KEM_SNTRUP761_PUBKEY_LEN,
                          seckey, GCRY_KEM_SNTRUP761_SECKEY_LEN,
@@ -102,6 +104,8 @@ test_kem_mceliece6688128f (int testno)
   uint8_t key1[GCRY_KEM_CM6688128F_SHARED_LEN];
   uint8_t key2[GCRY_KEM_CM6688128F_SHARED_LEN];
 
+  info (" Checking CM6688128F.\n");
+
   err = gcry_kem_genkey (GCRY_KEM_CM6688128F,
                          pubkey, GCRY_KEM_CM6688128F_PUBKEY_LEN,
                          seckey, GCRY_KEM_CM6688128F_SECKEY_LEN,
@@ -151,6 +155,7 @@ test_kem_mceliece6688128f (int testno)
 }
 
 
+#ifdef USE_KYBER
 static void
 test_kem_mlkem512 (int testno)
 {
@@ -160,6 +165,8 @@ test_kem_mlkem512 (int testno)
   uint8_t ciphertext[GCRY_KEM_MLKEM512_ENCAPS_LEN];
   uint8_t key1[GCRY_KEM_MLKEM512_SHARED_LEN];
   uint8_t key2[GCRY_KEM_MLKEM512_SHARED_LEN];
+
+  info (" Checking MLKEM512.\n");
 
   err = gcry_kem_genkey (GCRY_KEM_MLKEM512,
                          pubkey, GCRY_KEM_MLKEM512_PUBKEY_LEN,
@@ -219,6 +226,8 @@ test_kem_mlkem768 (int testno)
   uint8_t key1[GCRY_KEM_MLKEM768_SHARED_LEN];
   uint8_t key2[GCRY_KEM_MLKEM768_SHARED_LEN];
 
+  info (" Checking MLKEM768.\n");
+
   err = gcry_kem_genkey (GCRY_KEM_MLKEM768,
                          pubkey, GCRY_KEM_MLKEM768_PUBKEY_LEN,
                          seckey, GCRY_KEM_MLKEM768_SECKEY_LEN,
@@ -277,6 +286,8 @@ test_kem_mlkem1024 (int testno)
   uint8_t key1[GCRY_KEM_MLKEM1024_SHARED_LEN];
   uint8_t key2[GCRY_KEM_MLKEM1024_SHARED_LEN];
 
+  info (" Checking MLKEM1024.\n");
+
   err = gcry_kem_genkey (GCRY_KEM_MLKEM1024,
                          pubkey, GCRY_KEM_MLKEM1024_PUBKEY_LEN,
                          seckey, GCRY_KEM_MLKEM1024_SECKEY_LEN,
@@ -324,6 +335,7 @@ test_kem_mlkem1024 (int testno)
       putc ('\n', stderr);
     }
 }
+#endif
 
 
 static void
@@ -335,6 +347,8 @@ test_kem_raw_x25519 (int testno)
   uint8_t ciphertext[GCRY_KEM_ECC_X25519_ENCAPS_LEN];
   uint8_t key1[GCRY_KEM_RAW_X25519_SHARED_LEN];
   uint8_t key2[GCRY_KEM_RAW_X25519_SHARED_LEN];
+
+  info (" Checking X25519.\n");
 
   err = gcry_kem_genkey (GCRY_KEM_RAW_X25519,
                          pubkey, GCRY_KEM_ECC_X25519_PUBKEY_LEN,
@@ -403,6 +417,8 @@ test_kem_dhkem_x25519 (int testno)
   uint8_t ciphertext[GCRY_KEM_DHKEM25519_ENCAPS_LEN];
   uint8_t key1[GCRY_KEM_DHKEM25519_SHARED_LEN];
   uint8_t key2[GCRY_KEM_DHKEM25519_SHARED_LEN];
+
+  info (" Checking DHKEM25519.\n");
 
   err = gcry_kem_genkey (GCRY_KEM_DHKEM25519,
                          pubkey, GCRY_KEM_DHKEM25519_PUBKEY_LEN,
@@ -481,52 +497,54 @@ check_kem (int n_loops)
   info ("Checking KEM.\n");
 
   ntests = 0;
-  testno = 0;
+
   if ((selected_algo & SELECTED_ALGO_SNTRUP761))
     {
-      for (; testno < n_loops; testno++)
+      for (testno = 0; testno < n_loops; testno++)
         test_kem_sntrup761 (testno);
       ntests += n_loops;
     }
 
   if ((selected_algo & SELECTED_ALGO_CM6688128F))
     {
-      for (; testno < n_loops; testno++)
+      for (testno = 0; testno < n_loops; testno++)
         test_kem_mceliece6688128f (testno);
       ntests += n_loops;
     }
 
+#ifdef USE_KYBER
   if ((selected_algo & SELECTED_ALGO_MLKEM512))
     {
-      for (; testno < ntests + n_loops; testno++)
+      for (testno = 0; testno < ntests + n_loops; testno++)
         test_kem_mlkem512 (testno);
       ntests += n_loops;
     }
 
   if ((selected_algo & SELECTED_ALGO_MLKEM768))
     {
-      for (; testno < ntests + n_loops; testno++)
+      for (testno = 0; testno < ntests + n_loops; testno++)
         test_kem_mlkem768 (testno);
       ntests += n_loops;
     }
 
   if ((selected_algo & SELECTED_ALGO_MLKEM1024))
     {
-      for (; testno < ntests + n_loops; testno++)
+      for (testno = 0; testno < ntests + n_loops; testno++)
         test_kem_mlkem1024 (testno);
       ntests += n_loops;
     }
+#endif
 
   if ((selected_algo & SELECTED_ALGO_RAW_X25519))
     {
-      for (; testno < ntests + n_loops; testno++)
+      for (testno = 0; testno < ntests + n_loops; testno++)
         test_kem_raw_x25519 (testno);
       ntests += n_loops;
     }
 
   if ((selected_algo & SELECTED_ALGO_DHKEM25519))
     {
-      for (; testno < ntests + n_loops; testno++)
+      for (testno = 0; testno < ntests + n_loops; testno++)
         test_kem_dhkem_x25519 (testno);
       ntests += n_loops;
     }
@@ -568,9 +586,11 @@ main (int argc, char **argv)
                  "  --loops N       specify the loop count\n"
                  "  --sntrup761     select SNTRUP761 algo\n"
                  "  --cm6688128f    select CM6688128F algo\n"
+#ifdef USE_KYBER
                  "  --mlkem512      select MLKEM512 algo\n"
                  "  --mlkem768      select MLKEM768 algo\n"
                  "  --mlkem1024     select MLKEM1024 algo\n"
+#endif
                  "  --dhkem25519    select DHKEM25519 algo\n",
                  stdout);
           exit (0);
@@ -608,6 +628,7 @@ main (int argc, char **argv)
           argc--;
           argv++;
         }
+#ifdef USE_KYBER
       else if (!strcmp (*argv, "--mlkem512"))
         {
           selected_algo = SELECTED_ALGO_MLKEM512;
@@ -626,6 +647,7 @@ main (int argc, char **argv)
           argc--;
           argv++;
         }
+#endif
       else if (!strcmp (*argv, "--raw-x25519"))
         {
           selected_algo = SELECTED_ALGO_RAW_X25519;

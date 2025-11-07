@@ -25,7 +25,7 @@ tests_bin = \
         version t-secmem mpitests t-sexp t-convert \
 	t-mpi-bit t-mpi-point t-lock \
 	prime basic keygen pubkey hmac hashtest t-kdf keygrip \
-	aeswrap random t-kem t-mlkem t-thread-local t-fips-service-ind
+	aeswrap random t-kem t-thread-local t-fips-service-ind
 
 if USE_RSA
 tests_bin += pkcs1v2 t-rsa-pss t-rsa-15 t-rsa-testparm
@@ -39,6 +39,13 @@ if USE_ECC
 tests_bin += curves t-ecdsa t-ed25519 t-cv25519 t-x448 t-ed448
 endif
 
+if USE_KYBER
+tests_bin += t-mlkem
+endif
+
+if USE_DILITHIUM
+tests_bin += t-mldsa
+endif
 
 tests_bin_last = benchmark bench-slope
 
@@ -81,7 +88,7 @@ CLEANFILES = testdrv-build
 EXTRA_DIST = README rsa-16k.key \
 	     pkcs1v2-oaep.h pkcs1v2-pss.h pkcs1v2-v15c.h pkcs1v2-v15s.h \
 	     t-ed25519.inp t-ed448.inp t-dsa.inp t-ecdsa.inp t-rsa-15.inp \
-	     t-rsa-pss.inp t-mlkem.inp \
+	     t-rsa-pss.inp t-mlkem.inp t-mldsa.inp \
 	     stopwatch.h hashtest-6g.in hashtest-256g.in \
 	     sha3-224.h sha3-256.h sha3-384.h sha3-512.h blake2b.h blake2s.h \
 	     basic-disable-all-hwf.in basic_all_hwfeature_combinations.sh
@@ -94,6 +101,8 @@ t_secmem_LDADD = $(standard_ldadd) @LDADD_FOR_TESTS_KLUDGE@
 testapi_LDADD = $(standard_ldadd) @LDADD_FOR_TESTS_KLUDGE@
 t_lock_LDADD = $(standard_ldadd) $(GPG_ERROR_MT_LIBS) @LDADD_FOR_TESTS_KLUDGE@
 t_lock_CFLAGS = $(GPG_ERROR_MT_CFLAGS)
+t_thread_local_LDADD = $(standard_ldadd) $(GPG_ERROR_MT_LIBS) @LDADD_FOR_TESTS_KLUDGE@
+t_thread_local_CFLAGS = $(GPG_ERROR_MT_CFLAGS)
 testdrv_LDADD = $(LDADD_FOR_TESTS_KLUDGE)
 
 # Build a version of the test driver for the build platform.

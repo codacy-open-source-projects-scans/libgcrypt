@@ -472,8 +472,8 @@ generate_fips (RSA_secret_key *sk, unsigned int nbits, unsigned long use_e,
     {
       /* Parameters to derive the key are given.  */
       /* Note that we explicitly need to setup the values of tbl
-         because some compilers (e.g. OpenWatcom, IRIX) don't allow to
-         initialize a structure with automatic variables.  */
+         because some compilers (e.g. OpenWatcom, IRIX) don't allow
+         initializing a structure with automatic variables.  */
       struct { const char *name; gcry_mpi_t *value; } tbl[] = {
         { "e" },
         { "p" },
@@ -483,6 +483,7 @@ generate_fips (RSA_secret_key *sk, unsigned int nbits, unsigned long use_e,
       int idx;
       gcry_sexp_t oneparm;
 
+      e = p = q = NULL;
       tbl[0].value = &e;
       tbl[1].value = &p;
       tbl[2].value = &q;
@@ -825,7 +826,7 @@ generate_x931 (RSA_secret_key *sk, unsigned int nbits, unsigned long e_value,
         /* Parameters to derive the key are given.  */
         /* Note that we explicitly need to setup the values of tbl
            because some compilers (e.g. OpenWatcom, IRIX) don't allow
-           to initialize a structure with automatic variables.  */
+           initializing a structure with automatic variables.  */
         struct { const char *name; gcry_mpi_t *value; } tbl[] = {
           { "Xp1" },
           { "Xp2" },
@@ -1501,7 +1502,19 @@ rsa_decrypt (gcry_sexp_t *r_plain, gcry_sexp_t s_data, gcry_sexp_t keyparms)
      be practically mounted over the network as shown by Brumley and
      Boney in 2003.  */
   if ((ctx.flags & PUBKEY_FLAG_NO_BLINDING))
-    secret (plain, data, &sk);
+    {
+      if (fips_mode ())
+        {
+          if (fips_check_rejection (GCRY_FIPS_FLAG_REJECT_PK_FLAGS))
+            {
+              rc = GPG_ERR_INV_FLAG;
+              goto leave;
+            }
+          else
+            fips_service_indicator_mark_non_compliant ();
+        }
+      secret (plain, data, &sk);
+    }
   else
     secret_blinded (plain, data, &sk, nbits);
 
@@ -1613,10 +1626,41 @@ rsa_sign (gcry_sexp_t *r_sig, gcry_sexp_t s_data, gcry_sexp_t keyparms)
         }
     }
 
+  /* Check if use of the hash is compliant.  */
+  if (fips_mode ())
+    {
+      /* SHA1 is approved hash function, but not for digital signature.  */
+      if (_gcry_md_algo_info (ctx.hash_algo, GCRYCTL_TEST_ALGO, NULL, NULL)
+          || ctx.hash_algo == GCRY_MD_SHA1)
+        {
+          if (fips_check_rejection (GCRY_FIPS_FLAG_REJECT_PK_MD))
+            {
+              rc = GPG_ERR_DIGEST_ALGO;
+              goto leave;
+            }
+          else
+            fips_service_indicator_mark_non_compliant ();
+        }
+    }
+
   /* Do RSA computation.  */
   sig = mpi_new (0);
+
   if ((ctx.flags & PUBKEY_FLAG_NO_BLINDING))
-    secret (sig, data, &sk);
+    {
+      if (fips_mode ())
+        {
+          if (fips_check_rejection (GCRY_FIPS_FLAG_REJECT_PK_FLAGS))
+            {
+              rc = GPG_ERR_INV_FLAG;
+              goto leave;
+            }
+          else
+            fips_service_indicator_mark_non_compliant ();
+        }
+
+        secret (sig, data, &sk);
+    }
   else
     secret_blinded (sig, data, &sk, nbits);
   if (DBG_CIPHER)
@@ -1718,6 +1762,23 @@ rsa_verify (gcry_sexp_t s_sig, gcry_sexp_t s_data, gcry_sexp_t keyparms)
     {
       log_printmpi ("rsa_verify    n", pk.n);
       log_printmpi ("rsa_verify    e", pk.e);
+    }
+
+  /* Check if use of the hash is compliant.  */
+  if (fips_mode ())
+    {
+      /* SHA1 is approved hash function, but not for digital signature.  */
+      if (_gcry_md_algo_info (ctx.hash_algo, GCRYCTL_TEST_ALGO, NULL, NULL)
+          || ctx.hash_algo == GCRY_MD_SHA1)
+        {
+          if (fips_check_rejection (GCRY_FIPS_FLAG_REJECT_PK_MD))
+            {
+              rc = GPG_ERR_DIGEST_ALGO;
+              goto leave;
+            }
+          else
+            fips_service_indicator_mark_non_compliant ();
+        }
     }
 
   /* Do RSA computation and compare.  */

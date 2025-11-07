@@ -29,6 +29,7 @@
 
 #define PGM "t-fips-service-ind"
 
+#define NEED_HEX2BUFFER
 #include "t-common.h"
 static int in_fips_mode;
 #define MAX_DATA_LEN 1040
@@ -39,39 +40,897 @@ static int in_fips_mode;
 # include <windows.h>
 #endif
 
+/* Check gcry_pk_genkey, gcry_pk_testkey, gcry_pk_get_nbits, gcry_pk_get_curve API.  */
+static void
+check_pk_g_t_n_c (int reject)
+{
+  static struct {
+    const char *keyparms;
+    int expect_failure;
+  } tv[] = {
+    {
+      "(genkey (ecc (curve nistp256)))",
+      0
+    },
+    {                           /* non-compliant curve */
+      "(genkey (ecc (curve secp256k1)))",
+      1
+    }
+  };
+  int tvidx;
+  gpg_error_t err;
+  gpg_err_code_t ec;
+
+  for (tvidx=0; tvidx < DIM(tv); tvidx++)
+    {
+      gcry_sexp_t s_kp = NULL;
+      gcry_sexp_t s_sk = NULL;
+      int nbits;
+      const char *name;
+
+      if (verbose)
+        info ("checking gcry_pk_{genkey,testkey,get_nbits,get_curve} test %d\n", tvidx);
+
+      err = gcry_sexp_build (&s_kp, NULL, tv[tvidx].keyparms);
+      if (err)
+        {
+          fail ("error building SEXP for test, %s: %s",
+                "keyparms", gpg_strerror (err));
+          goto next;
+        }
+
+      err = gcry_pk_genkey (&s_sk, s_kp);
+      if (err)
+        {
+          if (in_fips_mode && reject && tv[tvidx].expect_failure)
+            /* Here, an error is expected */
+            ;
+          else
+            fail ("gcry_pk_genkey failed: %s", gpg_strerror (err));
+          goto next;
+        }
+      else
+        {
+          if (in_fips_mode && reject && tv[tvidx].expect_failure)
+            {
+              fail ("gcry_pk_genkey test %d unexpectedly succeeded", tvidx);
+              goto next;
+            }
+        }
+
+      ec = gcry_get_fips_service_indicator ();
+      if (ec == GPG_ERR_INV_OP)
+        {
+          /* libgcrypt is old, no support of the FIPS service indicator.  */
+          fail ("gcry_pk_genkey test %d unexpectedly failed to check the FIPS service indicator.\n",
+                tvidx);
+          goto next;
+        }
+
+      if (in_fips_mode && !tv[tvidx].expect_failure && ec)
+        {
+          /* Success with the FIPS service indicator == 0 expected, but != 0.  */
+          fail ("gcry_pk_genkey test %d unexpectedly set the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+      else if (in_fips_mode && tv[tvidx].expect_failure && !ec)
+        {
+          /* Success with the FIPS service indicator != 0 expected, but == 0.  */
+          fail ("gcry_pk_genkey test %d unexpectedly cleared the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+
+      err = gcry_pk_testkey (s_sk);
+      if (err)
+        {
+          fail ("gcry_pk_testkey failed for test: %s", gpg_strerror (err));
+          goto next;
+        }
+
+      ec = gcry_get_fips_service_indicator ();
+      if (ec == GPG_ERR_INV_OP)
+        {
+          /* libgcrypt is old, no support of the FIPS service indicator.  */
+          fail ("gcry_pk_testkey test %d unexpectedly failed to check the FIPS service indicator.\n",
+                tvidx);
+          goto next;
+        }
+
+      if (in_fips_mode && !tv[tvidx].expect_failure && ec)
+        {
+          /* Success with the FIPS service indicator == 0 expected, but != 0.  */
+          fail ("gcry_pk_testkey test %d unexpectedly set the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+      else if (in_fips_mode && tv[tvidx].expect_failure && !ec)
+        {
+          /* Success with the FIPS service indicator != 0 expected, but == 0.  */
+          fail ("gcry_pk_testkey test %d unexpectedly cleared the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+
+      nbits = gcry_pk_get_nbits (s_sk);
+      if (!nbits)
+        {
+          fail ("gcry_pk_get_nbits failed for test");
+          goto next;
+        }
+
+      ec = gcry_get_fips_service_indicator ();
+      if (ec == GPG_ERR_INV_OP)
+        {
+          /* libgcrypt is old, no support of the FIPS service indicator.  */
+          fail ("gcry_pk_get_nbits test %d unexpectedly failed to check the FIPS service indicator.\n",
+                tvidx);
+          goto next;
+        }
+
+      if (in_fips_mode && !tv[tvidx].expect_failure && ec)
+        {
+          /* Success with the FIPS service indicator == 0 expected, but != 0.  */
+          fail ("gcry_pk_get_nbits test %d unexpectedly set the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+      else if (in_fips_mode && tv[tvidx].expect_failure && !ec)
+        {
+          /* Success with the FIPS service indicator != 0 expected, but == 0.  */
+          fail ("gcry_pk_get_nbits test %d unexpectedly cleared the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+
+      name = gcry_pk_get_curve (s_sk, 0, NULL);
+      if (!name)
+        {
+          fail ("gcry_pk_get_curve failed for test: %s", gpg_strerror (err));
+          goto next;
+        }
+
+      ec = gcry_get_fips_service_indicator ();
+      if (ec == GPG_ERR_INV_OP)
+        {
+          /* libgcrypt is old, no support of the FIPS service indicator.  */
+          fail ("gcry_pk_get_curve test %d unexpectedly failed to check the FIPS service indicator.\n",
+                tvidx);
+          goto next;
+        }
+
+      if (in_fips_mode && !tv[tvidx].expect_failure && ec)
+        {
+          /* Success with the FIPS service indicator == 0 expected, but != 0.  */
+          fail ("gcry_pk_get_curve test %d unexpectedly set the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+      else if (in_fips_mode && tv[tvidx].expect_failure && !ec)
+        {
+          /* Success with the FIPS service indicator != 0 expected, but == 0.  */
+          fail ("gcry_pk_get_curve test %d unexpectedly cleared the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+
+    next:
+      gcry_sexp_release (s_kp);
+      gcry_sexp_release (s_sk);
+    }
+}
+
+/* Check gcry_pk_sign, gcry_verify API.  */
+static void
+check_pk_s_v (int reject)
+{
+  static struct {
+    const char *prvkey;
+    const char *pubkey;
+    const char *data;
+    int expect_failure;
+  } tv[] = {
+    {                           /* Hashing is done externally, and feeded
+                                   to gcry_pk_sign, specifing the hash used */
+      "(private-key (ecc (curve nistp256)"
+      " (d #519b423d715f8b581f4fa8ee59f4771a5b44c8130b4e3eacca54a56dda72b464#)))",
+      "(public-key (ecc (curve nistp256)"
+      " (q #041ccbe91c075fc7f4f033bfa248db8fccd3565de94bbfb12f3c59ff46c271bf83"
+      "ce4014c68811f9a21a1fdb2c0e6113e06db7ca93b7404e78dc7ccd5ca89a4ca9#)))",
+      "(data (flags raw)(hash sha256 "
+      "#00112233445566778899AABBCCDDEEFF000102030405060708090A0B0C0D0E0F#))",
+      0
+    },
+    {                           /* non-compliant curve */
+      "(private-key (ecc (curve secp256k1)"
+      " (d #c2cdf0a8b0a83b35ace53f097b5e6e6a0a1f2d40535eff1cf434f52a43d59d8f#)))",
+      "(public-key (ecc (curve secp256k1)"
+      " (q #046fcc37ea5e9e09fec6c83e5fbd7a745e3eee81d16ebd861c9e66f55518c19798"
+      "4e9f113c07f875691df8afc1029496fc4cb9509b39dcd38f251a83359cc8b4f7#)))",
+      "(data (flags raw)(hash sha256 "
+      "#00112233445566778899AABBCCDDEEFF000102030405060708090A0B0C0D0E0F#))",
+      1
+    },
+    {                           /* non-compliant hash */
+      "(private-key (ecc (curve nistp256)"
+      " (d #519b423d715f8b581f4fa8ee59f4771a5b44c8130b4e3eacca54a56dda72b464#)))",
+      "(public-key (ecc (curve nistp256)"
+      " (q #041ccbe91c075fc7f4f033bfa248db8fccd3565de94bbfb12f3c59ff46c271bf83"
+      "ce4014c68811f9a21a1fdb2c0e6113e06db7ca93b7404e78dc7ccd5ca89a4ca9#)))",
+      "(data (flags raw)(hash ripemd160 "
+      "#00112233445566778899AABBCCDDEEFF00010203#))",
+      1
+    },
+    {                           /* non-compliant hash for signing */
+      "(private-key (ecc (curve nistp256)"
+      " (d #519b423d715f8b581f4fa8ee59f4771a5b44c8130b4e3eacca54a56dda72b464#)))",
+      "(public-key (ecc (curve nistp256)"
+      " (q #041ccbe91c075fc7f4f033bfa248db8fccd3565de94bbfb12f3c59ff46c271bf83"
+      "ce4014c68811f9a21a1fdb2c0e6113e06db7ca93b7404e78dc7ccd5ca89a4ca9#)))",
+      "(data (flags raw)(hash sha1 "
+      "#00112233445566778899AABBCCDDEEFF00010203#))",
+      1
+    },
+    {                           /* Hashing is done internally in
+                                   gcry_pk_sign with the hash-algo specified.  */
+      "(private-key\n"
+      " (ecc\n"
+      "  (curve Ed25519)(flags eddsa)\n"
+      "  (q #4014DB483F15527253B25B4C72BEA8BB70255029636BD71DBBCCD5D8BF48A35F17#)"
+      "  (d #09A0C38E0F1699073541447C19DA12E3A07A7BFDB0C186E4AC5BCE6F23D55252#)"
+      "))",
+      "(public-key\n"
+      " (ecc\n"
+      "  (curve Ed25519)(flags eddsa)\n"
+      "  (q #4014DB483F15527253B25B4C72BEA8BB70255029636BD71DBBCCD5D8BF48A35F17#)"
+      "))",
+      "(data(flags eddsa)(hash-algo sha512)(value "
+      "#00112233445566778899AABBCCDDEEFF000102030405060708090A0B0C0D0E0F"
+      " 00112233445566778899AABBCCDDEEFF000102030405060708090A0B0C0D0E0F"
+      " 00112233445566778899AABBCCDDEEFF000102030405060708090A0B0C0D0E0F#))",
+      0
+    }
+#if USE_RSA
+    ,
+    {                           /* RSA with compliant hash for signing */
+      "(private-key"
+      " (rsa"
+      "  (n #009F56231A3D82E3E7D613D59D53E9AB921BEF9F08A782AED0B6E46ADBC853EC"
+      "      7C71C422435A3CD8FA0DB9EFD55CD3295BADC4E8E2E2B94E15AE82866AB8ADE8"
+      "      7E469FAE76DC3577DE87F1F419C4EB41123DFAF8D16922D5EDBAD6E9076D5A1C"
+      "      958106F0AE5E2E9193C6B49124C64C2A241C4075D4AF16299EB87A6585BAE917"
+      "      DEF27FCDD165764D069BC18D16527B29DAAB549F7BBED4A7C6A842D203ED6613"
+      "      6E2411744E432CD26D940132F25874483DCAEECDFD95744819CBCF1EA810681C"
+      "      42907EBCB1C7EAFBE75C87EC32C5413EA10476545D3FC7B2ADB1B66B7F200918"
+      "      664B0E5261C2895AA28B0DE321E921B3F877172CCCAB81F43EF98002916156F6"
+      "      CB#)\n"
+      "   (e #010001#)\n"
+      "   (d #07EF82500C403899934FE993AC5A36F14FF2DF38CF1EF315F205EE4C83EDAA19"
+      "       8890FC23DE9AA933CAFB37B6A8A8DBA675411958337287310D3FF2F1DDC0CB93"
+      "       7E70F57F75F833C021852B631D2B9A520E4431A03C5C3FCB5742DCD841D9FB12"
+      "       771AA1620DCEC3F1583426066ED9DC3F7028C5B59202C88FDF20396E2FA0EC4F"
+      "       5A22D9008F3043673931BC14A5046D6327398327900867E39CC61B2D1AFE2F48"
+      "       EC8E1E3861C68D257D7425F4E6F99ABD77D61F10CA100EFC14389071831B33DD"
+      "       69CC8EABEF860D1DC2AAA84ABEAE5DFC91BC124DAF0F4C8EF5BBEA436751DE84"
+      "       3A8063E827A024466F44C28614F93B0732A100D4A0D86D532FE1E22C7725E401"
+      "       #)\n"
+      "   (p #00C29D438F115825779631CD665A5739367F3E128ADC29766483A46CA80897E0"
+      "       79B32881860B8F9A6A04C2614A904F6F2578DAE13EA67CD60AE3D0AA00A1FF9B"
+      "       441485E44B2DC3D0B60260FBFE073B5AC72FAF67964DE15C8212C389D20DB9CF"
+      "       54AF6AEF5C4196EAA56495DD30CF709F499D5AB30CA35E086C2A1589D6283F17"
+      "       83#)\n"
+      "   (q #00D1984135231CB243FE959C0CBEF551EDD986AD7BEDF71EDF447BE3DA27AF46"
+      "       79C974A6FA69E4D52FE796650623DE70622862713932AA2FD9F2EC856EAEAA77"
+      "       88B4EA6084DC81C902F014829B18EA8B2666EC41586818E0589E18876065F97E"
+      "       8D22CE2DA53A05951EC132DCEF41E70A9C35F4ACC268FFAC2ADF54FA1DA110B9"
+      "       19#)\n"
+      "   (u #67CF0FD7635205DD80FA814EE9E9C267C17376BF3209FB5D1BC42890D2822A04"
+      "       479DAF4D5B6ED69D0F8D1AF94164D07F8CD52ECEFE880641FA0F41DDAB1785E4"
+      "       A37A32F997A516480B4CD4F6482B9466A1765093ED95023CA32D5EDC1E34CEE9"
+      "       AF595BC51FE43C4BF810FA225AF697FB473B83815966188A4312C048B885E3F7"
+      "       #)))\n",
+      "(public-key\n"
+      " (rsa\n"
+      "  (n #009F56231A3D82E3E7D613D59D53E9AB921BEF9F08A782AED0B6E46ADBC853EC"
+      "      7C71C422435A3CD8FA0DB9EFD55CD3295BADC4E8E2E2B94E15AE82866AB8ADE8"
+      "      7E469FAE76DC3577DE87F1F419C4EB41123DFAF8D16922D5EDBAD6E9076D5A1C"
+      "      958106F0AE5E2E9193C6B49124C64C2A241C4075D4AF16299EB87A6585BAE917"
+      "      DEF27FCDD165764D069BC18D16527B29DAAB549F7BBED4A7C6A842D203ED6613"
+      "      6E2411744E432CD26D940132F25874483DCAEECDFD95744819CBCF1EA810681C"
+      "      42907EBCB1C7EAFBE75C87EC32C5413EA10476545D3FC7B2ADB1B66B7F200918"
+      "      664B0E5261C2895AA28B0DE321E921B3F877172CCCAB81F43EF98002916156F6"
+      "      CB#)\n"
+      "   (e #010001#)))\n",
+      "(data\n (flags pkcs1)\n"
+      " (hash sha256 "
+      "#00112233445566778899AABBCCDDEEFF000102030405060708090A0B0C0D0E0F#))\n",
+      0
+    },
+    {                           /* RSA with non-compliant hash for signing */
+      "(private-key"
+      " (rsa"
+      "  (n #009F56231A3D82E3E7D613D59D53E9AB921BEF9F08A782AED0B6E46ADBC853EC"
+      "      7C71C422435A3CD8FA0DB9EFD55CD3295BADC4E8E2E2B94E15AE82866AB8ADE8"
+      "      7E469FAE76DC3577DE87F1F419C4EB41123DFAF8D16922D5EDBAD6E9076D5A1C"
+      "      958106F0AE5E2E9193C6B49124C64C2A241C4075D4AF16299EB87A6585BAE917"
+      "      DEF27FCDD165764D069BC18D16527B29DAAB549F7BBED4A7C6A842D203ED6613"
+      "      6E2411744E432CD26D940132F25874483DCAEECDFD95744819CBCF1EA810681C"
+      "      42907EBCB1C7EAFBE75C87EC32C5413EA10476545D3FC7B2ADB1B66B7F200918"
+      "      664B0E5261C2895AA28B0DE321E921B3F877172CCCAB81F43EF98002916156F6"
+      "      CB#)\n"
+      "   (e #010001#)\n"
+      "   (d #07EF82500C403899934FE993AC5A36F14FF2DF38CF1EF315F205EE4C83EDAA19"
+      "       8890FC23DE9AA933CAFB37B6A8A8DBA675411958337287310D3FF2F1DDC0CB93"
+      "       7E70F57F75F833C021852B631D2B9A520E4431A03C5C3FCB5742DCD841D9FB12"
+      "       771AA1620DCEC3F1583426066ED9DC3F7028C5B59202C88FDF20396E2FA0EC4F"
+      "       5A22D9008F3043673931BC14A5046D6327398327900867E39CC61B2D1AFE2F48"
+      "       EC8E1E3861C68D257D7425F4E6F99ABD77D61F10CA100EFC14389071831B33DD"
+      "       69CC8EABEF860D1DC2AAA84ABEAE5DFC91BC124DAF0F4C8EF5BBEA436751DE84"
+      "       3A8063E827A024466F44C28614F93B0732A100D4A0D86D532FE1E22C7725E401"
+      "       #)\n"
+      "   (p #00C29D438F115825779631CD665A5739367F3E128ADC29766483A46CA80897E0"
+      "       79B32881860B8F9A6A04C2614A904F6F2578DAE13EA67CD60AE3D0AA00A1FF9B"
+      "       441485E44B2DC3D0B60260FBFE073B5AC72FAF67964DE15C8212C389D20DB9CF"
+      "       54AF6AEF5C4196EAA56495DD30CF709F499D5AB30CA35E086C2A1589D6283F17"
+      "       83#)\n"
+      "   (q #00D1984135231CB243FE959C0CBEF551EDD986AD7BEDF71EDF447BE3DA27AF46"
+      "       79C974A6FA69E4D52FE796650623DE70622862713932AA2FD9F2EC856EAEAA77"
+      "       88B4EA6084DC81C902F014829B18EA8B2666EC41586818E0589E18876065F97E"
+      "       8D22CE2DA53A05951EC132DCEF41E70A9C35F4ACC268FFAC2ADF54FA1DA110B9"
+      "       19#)\n"
+      "   (u #67CF0FD7635205DD80FA814EE9E9C267C17376BF3209FB5D1BC42890D2822A04"
+      "       479DAF4D5B6ED69D0F8D1AF94164D07F8CD52ECEFE880641FA0F41DDAB1785E4"
+      "       A37A32F997A516480B4CD4F6482B9466A1765093ED95023CA32D5EDC1E34CEE9"
+      "       AF595BC51FE43C4BF810FA225AF697FB473B83815966188A4312C048B885E3F7"
+      "       #)))\n",
+      "(public-key\n"
+      " (rsa\n"
+      "  (n #009F56231A3D82E3E7D613D59D53E9AB921BEF9F08A782AED0B6E46ADBC853EC"
+      "      7C71C422435A3CD8FA0DB9EFD55CD3295BADC4E8E2E2B94E15AE82866AB8ADE8"
+      "      7E469FAE76DC3577DE87F1F419C4EB41123DFAF8D16922D5EDBAD6E9076D5A1C"
+      "      958106F0AE5E2E9193C6B49124C64C2A241C4075D4AF16299EB87A6585BAE917"
+      "      DEF27FCDD165764D069BC18D16527B29DAAB549F7BBED4A7C6A842D203ED6613"
+      "      6E2411744E432CD26D940132F25874483DCAEECDFD95744819CBCF1EA810681C"
+      "      42907EBCB1C7EAFBE75C87EC32C5413EA10476545D3FC7B2ADB1B66B7F200918"
+      "      664B0E5261C2895AA28B0DE321E921B3F877172CCCAB81F43EF98002916156F6"
+      "      CB#)\n"
+      "   (e #010001#)))\n",
+      "(data\n (flags pkcs1)\n"
+      " (hash sha1 #11223344556677889900AABBCCDDEEFF10203040#))\n",
+      1
+    },
+    {                           /* RSA with unknown hash for signing */
+      "(private-key"
+      " (rsa"
+      "  (n #009F56231A3D82E3E7D613D59D53E9AB921BEF9F08A782AED0B6E46ADBC853EC"
+      "      7C71C422435A3CD8FA0DB9EFD55CD3295BADC4E8E2E2B94E15AE82866AB8ADE8"
+      "      7E469FAE76DC3577DE87F1F419C4EB41123DFAF8D16922D5EDBAD6E9076D5A1C"
+      "      958106F0AE5E2E9193C6B49124C64C2A241C4075D4AF16299EB87A6585BAE917"
+      "      DEF27FCDD165764D069BC18D16527B29DAAB549F7BBED4A7C6A842D203ED6613"
+      "      6E2411744E432CD26D940132F25874483DCAEECDFD95744819CBCF1EA810681C"
+      "      42907EBCB1C7EAFBE75C87EC32C5413EA10476545D3FC7B2ADB1B66B7F200918"
+      "      664B0E5261C2895AA28B0DE321E921B3F877172CCCAB81F43EF98002916156F6"
+      "      CB#)\n"
+      "   (e #010001#)\n"
+      "   (d #07EF82500C403899934FE993AC5A36F14FF2DF38CF1EF315F205EE4C83EDAA19"
+      "       8890FC23DE9AA933CAFB37B6A8A8DBA675411958337287310D3FF2F1DDC0CB93"
+      "       7E70F57F75F833C021852B631D2B9A520E4431A03C5C3FCB5742DCD841D9FB12"
+      "       771AA1620DCEC3F1583426066ED9DC3F7028C5B59202C88FDF20396E2FA0EC4F"
+      "       5A22D9008F3043673931BC14A5046D6327398327900867E39CC61B2D1AFE2F48"
+      "       EC8E1E3861C68D257D7425F4E6F99ABD77D61F10CA100EFC14389071831B33DD"
+      "       69CC8EABEF860D1DC2AAA84ABEAE5DFC91BC124DAF0F4C8EF5BBEA436751DE84"
+      "       3A8063E827A024466F44C28614F93B0732A100D4A0D86D532FE1E22C7725E401"
+      "       #)\n"
+      "   (p #00C29D438F115825779631CD665A5739367F3E128ADC29766483A46CA80897E0"
+      "       79B32881860B8F9A6A04C2614A904F6F2578DAE13EA67CD60AE3D0AA00A1FF9B"
+      "       441485E44B2DC3D0B60260FBFE073B5AC72FAF67964DE15C8212C389D20DB9CF"
+      "       54AF6AEF5C4196EAA56495DD30CF709F499D5AB30CA35E086C2A1589D6283F17"
+      "       83#)\n"
+      "   (q #00D1984135231CB243FE959C0CBEF551EDD986AD7BEDF71EDF447BE3DA27AF46"
+      "       79C974A6FA69E4D52FE796650623DE70622862713932AA2FD9F2EC856EAEAA77"
+      "       88B4EA6084DC81C902F014829B18EA8B2666EC41586818E0589E18876065F97E"
+      "       8D22CE2DA53A05951EC132DCEF41E70A9C35F4ACC268FFAC2ADF54FA1DA110B9"
+      "       19#)\n"
+      "   (u #67CF0FD7635205DD80FA814EE9E9C267C17376BF3209FB5D1BC42890D2822A04"
+      "       479DAF4D5B6ED69D0F8D1AF94164D07F8CD52ECEFE880641FA0F41DDAB1785E4"
+      "       A37A32F997A516480B4CD4F6482B9466A1765093ED95023CA32D5EDC1E34CEE9"
+      "       AF595BC51FE43C4BF810FA225AF697FB473B83815966188A4312C048B885E3F7"
+      "       #)))\n",
+      "(public-key\n"
+      " (rsa\n"
+      "  (n #009F56231A3D82E3E7D613D59D53E9AB921BEF9F08A782AED0B6E46ADBC853EC"
+      "      7C71C422435A3CD8FA0DB9EFD55CD3295BADC4E8E2E2B94E15AE82866AB8ADE8"
+      "      7E469FAE76DC3577DE87F1F419C4EB41123DFAF8D16922D5EDBAD6E9076D5A1C"
+      "      958106F0AE5E2E9193C6B49124C64C2A241C4075D4AF16299EB87A6585BAE917"
+      "      DEF27FCDD165764D069BC18D16527B29DAAB549F7BBED4A7C6A842D203ED6613"
+      "      6E2411744E432CD26D940132F25874483DCAEECDFD95744819CBCF1EA810681C"
+      "      42907EBCB1C7EAFBE75C87EC32C5413EA10476545D3FC7B2ADB1B66B7F200918"
+      "      664B0E5261C2895AA28B0DE321E921B3F877172CCCAB81F43EF98002916156F6"
+      "      CB#)\n"
+      "   (e #010001#)))\n",
+      "(data\n (flags pkcs1-raw)\n"
+      " (value "
+      "#00112233445566778899AABBCCDDEEFF000102030405060708090A0B0C0D0E0F#))\n",
+      1
+    },
+    {                           /* RSA with compliant hash for signing */
+      "(private-key"
+      " (rsa"
+      "  (n #009F56231A3D82E3E7D613D59D53E9AB921BEF9F08A782AED0B6E46ADBC853EC"
+      "      7C71C422435A3CD8FA0DB9EFD55CD3295BADC4E8E2E2B94E15AE82866AB8ADE8"
+      "      7E469FAE76DC3577DE87F1F419C4EB41123DFAF8D16922D5EDBAD6E9076D5A1C"
+      "      958106F0AE5E2E9193C6B49124C64C2A241C4075D4AF16299EB87A6585BAE917"
+      "      DEF27FCDD165764D069BC18D16527B29DAAB549F7BBED4A7C6A842D203ED6613"
+      "      6E2411744E432CD26D940132F25874483DCAEECDFD95744819CBCF1EA810681C"
+      "      42907EBCB1C7EAFBE75C87EC32C5413EA10476545D3FC7B2ADB1B66B7F200918"
+      "      664B0E5261C2895AA28B0DE321E921B3F877172CCCAB81F43EF98002916156F6"
+      "      CB#)\n"
+      "   (e #010001#)\n"
+      "   (d #07EF82500C403899934FE993AC5A36F14FF2DF38CF1EF315F205EE4C83EDAA19"
+      "       8890FC23DE9AA933CAFB37B6A8A8DBA675411958337287310D3FF2F1DDC0CB93"
+      "       7E70F57F75F833C021852B631D2B9A520E4431A03C5C3FCB5742DCD841D9FB12"
+      "       771AA1620DCEC3F1583426066ED9DC3F7028C5B59202C88FDF20396E2FA0EC4F"
+      "       5A22D9008F3043673931BC14A5046D6327398327900867E39CC61B2D1AFE2F48"
+      "       EC8E1E3861C68D257D7425F4E6F99ABD77D61F10CA100EFC14389071831B33DD"
+      "       69CC8EABEF860D1DC2AAA84ABEAE5DFC91BC124DAF0F4C8EF5BBEA436751DE84"
+      "       3A8063E827A024466F44C28614F93B0732A100D4A0D86D532FE1E22C7725E401"
+      "       #)\n"
+      "   (p #00C29D438F115825779631CD665A5739367F3E128ADC29766483A46CA80897E0"
+      "       79B32881860B8F9A6A04C2614A904F6F2578DAE13EA67CD60AE3D0AA00A1FF9B"
+      "       441485E44B2DC3D0B60260FBFE073B5AC72FAF67964DE15C8212C389D20DB9CF"
+      "       54AF6AEF5C4196EAA56495DD30CF709F499D5AB30CA35E086C2A1589D6283F17"
+      "       83#)\n"
+      "   (q #00D1984135231CB243FE959C0CBEF551EDD986AD7BEDF71EDF447BE3DA27AF46"
+      "       79C974A6FA69E4D52FE796650623DE70622862713932AA2FD9F2EC856EAEAA77"
+      "       88B4EA6084DC81C902F014829B18EA8B2666EC41586818E0589E18876065F97E"
+      "       8D22CE2DA53A05951EC132DCEF41E70A9C35F4ACC268FFAC2ADF54FA1DA110B9"
+      "       19#)\n"
+      "   (u #67CF0FD7635205DD80FA814EE9E9C267C17376BF3209FB5D1BC42890D2822A04"
+      "       479DAF4D5B6ED69D0F8D1AF94164D07F8CD52ECEFE880641FA0F41DDAB1785E4"
+      "       A37A32F997A516480B4CD4F6482B9466A1765093ED95023CA32D5EDC1E34CEE9"
+      "       AF595BC51FE43C4BF810FA225AF697FB473B83815966188A4312C048B885E3F7"
+      "       #)))\n",
+      "(public-key\n"
+      " (rsa\n"
+      "  (n #009F56231A3D82E3E7D613D59D53E9AB921BEF9F08A782AED0B6E46ADBC853EC"
+      "      7C71C422435A3CD8FA0DB9EFD55CD3295BADC4E8E2E2B94E15AE82866AB8ADE8"
+      "      7E469FAE76DC3577DE87F1F419C4EB41123DFAF8D16922D5EDBAD6E9076D5A1C"
+      "      958106F0AE5E2E9193C6B49124C64C2A241C4075D4AF16299EB87A6585BAE917"
+      "      DEF27FCDD165764D069BC18D16527B29DAAB549F7BBED4A7C6A842D203ED6613"
+      "      6E2411744E432CD26D940132F25874483DCAEECDFD95744819CBCF1EA810681C"
+      "      42907EBCB1C7EAFBE75C87EC32C5413EA10476545D3FC7B2ADB1B66B7F200918"
+      "      664B0E5261C2895AA28B0DE321E921B3F877172CCCAB81F43EF98002916156F6"
+      "      CB#)\n"
+      "   (e #010001#)))\n",
+      "(data\n (flags pss)\n"
+      " (hash sha256 "
+      "#00112233445566778899AABBCCDDEEFF000102030405060708090A0B0C0D0E0F#))\n",
+      0
+    },
+    {                           /* RSA with non-compliant hash for signing */
+      "(private-key"
+      " (rsa"
+      "  (n #009F56231A3D82E3E7D613D59D53E9AB921BEF9F08A782AED0B6E46ADBC853EC"
+      "      7C71C422435A3CD8FA0DB9EFD55CD3295BADC4E8E2E2B94E15AE82866AB8ADE8"
+      "      7E469FAE76DC3577DE87F1F419C4EB41123DFAF8D16922D5EDBAD6E9076D5A1C"
+      "      958106F0AE5E2E9193C6B49124C64C2A241C4075D4AF16299EB87A6585BAE917"
+      "      DEF27FCDD165764D069BC18D16527B29DAAB549F7BBED4A7C6A842D203ED6613"
+      "      6E2411744E432CD26D940132F25874483DCAEECDFD95744819CBCF1EA810681C"
+      "      42907EBCB1C7EAFBE75C87EC32C5413EA10476545D3FC7B2ADB1B66B7F200918"
+      "      664B0E5261C2895AA28B0DE321E921B3F877172CCCAB81F43EF98002916156F6"
+      "      CB#)\n"
+      "   (e #010001#)\n"
+      "   (d #07EF82500C403899934FE993AC5A36F14FF2DF38CF1EF315F205EE4C83EDAA19"
+      "       8890FC23DE9AA933CAFB37B6A8A8DBA675411958337287310D3FF2F1DDC0CB93"
+      "       7E70F57F75F833C021852B631D2B9A520E4431A03C5C3FCB5742DCD841D9FB12"
+      "       771AA1620DCEC3F1583426066ED9DC3F7028C5B59202C88FDF20396E2FA0EC4F"
+      "       5A22D9008F3043673931BC14A5046D6327398327900867E39CC61B2D1AFE2F48"
+      "       EC8E1E3861C68D257D7425F4E6F99ABD77D61F10CA100EFC14389071831B33DD"
+      "       69CC8EABEF860D1DC2AAA84ABEAE5DFC91BC124DAF0F4C8EF5BBEA436751DE84"
+      "       3A8063E827A024466F44C28614F93B0732A100D4A0D86D532FE1E22C7725E401"
+      "       #)\n"
+      "   (p #00C29D438F115825779631CD665A5739367F3E128ADC29766483A46CA80897E0"
+      "       79B32881860B8F9A6A04C2614A904F6F2578DAE13EA67CD60AE3D0AA00A1FF9B"
+      "       441485E44B2DC3D0B60260FBFE073B5AC72FAF67964DE15C8212C389D20DB9CF"
+      "       54AF6AEF5C4196EAA56495DD30CF709F499D5AB30CA35E086C2A1589D6283F17"
+      "       83#)\n"
+      "   (q #00D1984135231CB243FE959C0CBEF551EDD986AD7BEDF71EDF447BE3DA27AF46"
+      "       79C974A6FA69E4D52FE796650623DE70622862713932AA2FD9F2EC856EAEAA77"
+      "       88B4EA6084DC81C902F014829B18EA8B2666EC41586818E0589E18876065F97E"
+      "       8D22CE2DA53A05951EC132DCEF41E70A9C35F4ACC268FFAC2ADF54FA1DA110B9"
+      "       19#)\n"
+      "   (u #67CF0FD7635205DD80FA814EE9E9C267C17376BF3209FB5D1BC42890D2822A04"
+      "       479DAF4D5B6ED69D0F8D1AF94164D07F8CD52ECEFE880641FA0F41DDAB1785E4"
+      "       A37A32F997A516480B4CD4F6482B9466A1765093ED95023CA32D5EDC1E34CEE9"
+      "       AF595BC51FE43C4BF810FA225AF697FB473B83815966188A4312C048B885E3F7"
+      "       #)))\n",
+      "(public-key\n"
+      " (rsa\n"
+      "  (n #009F56231A3D82E3E7D613D59D53E9AB921BEF9F08A782AED0B6E46ADBC853EC"
+      "      7C71C422435A3CD8FA0DB9EFD55CD3295BADC4E8E2E2B94E15AE82866AB8ADE8"
+      "      7E469FAE76DC3577DE87F1F419C4EB41123DFAF8D16922D5EDBAD6E9076D5A1C"
+      "      958106F0AE5E2E9193C6B49124C64C2A241C4075D4AF16299EB87A6585BAE917"
+      "      DEF27FCDD165764D069BC18D16527B29DAAB549F7BBED4A7C6A842D203ED6613"
+      "      6E2411744E432CD26D940132F25874483DCAEECDFD95744819CBCF1EA810681C"
+      "      42907EBCB1C7EAFBE75C87EC32C5413EA10476545D3FC7B2ADB1B66B7F200918"
+      "      664B0E5261C2895AA28B0DE321E921B3F877172CCCAB81F43EF98002916156F6"
+      "      CB#)\n"
+      "   (e #010001#)))\n",
+      "(data\n (flags pss)\n"
+      " (hash sha1 #11223344556677889900AABBCCDDEEFF10203040#))\n",
+      1
+    }
+#endif /* USE_RSA */
+  };
+  int tvidx;
+  gpg_error_t err;
+  gpg_err_code_t ec;
+
+  for (tvidx=0; tvidx < DIM(tv); tvidx++)
+    {
+      gcry_sexp_t s_pk = NULL;
+      gcry_sexp_t s_sk = NULL;
+      gcry_sexp_t s_data = NULL;
+      gcry_sexp_t s_sig= NULL;
+
+      if (verbose)
+        info ("checking gcry_pk_{sign,verify} test %d\n", tvidx);
+
+      err = gcry_sexp_build (&s_sk, NULL, tv[tvidx].prvkey);
+      if (err)
+        {
+          fail ("error building SEXP for test, %s: %s",
+                "sk", gpg_strerror (err));
+          goto next;
+        }
+
+      err = gcry_sexp_build (&s_pk, NULL, tv[tvidx].pubkey);
+      if (err)
+        {
+          fail ("error building SEXP for test, %s: %s",
+                "pk", gpg_strerror (err));
+          goto next;
+        }
+
+      err = gcry_sexp_build (&s_data, NULL, tv[tvidx].data);
+      if (err)
+        {
+          fail ("error building SEXP for test, %s: %s",
+                "data", gpg_strerror (err));
+          goto next;
+        }
+
+      err = gcry_pk_sign (&s_sig, s_data, s_sk);
+      if (err)
+        {
+          if (in_fips_mode && reject && tv[tvidx].expect_failure)
+            /* Here, an error is expected */
+            ;
+          else
+            fail ("gcry_pk_sign failed: %s", gpg_strerror (err));
+          goto next;
+        }
+      else
+        {
+          if (in_fips_mode && reject && tv[tvidx].expect_failure)
+            {
+              fail ("gcry_pk_sign test %d unexpectedly succeeded", tvidx);
+              goto next;
+            }
+        }
+
+      ec = gcry_get_fips_service_indicator ();
+      if (ec == GPG_ERR_INV_OP)
+        {
+          /* libgcrypt is old, no support of the FIPS service indicator.  */
+          fail ("gcry_pk_sign test %d unexpectedly failed to check the FIPS service indicator.\n",
+                tvidx);
+          goto next;
+        }
+
+      if (in_fips_mode && !tv[tvidx].expect_failure && ec)
+        {
+          /* Success with the FIPS service indicator == 0 expected, but != 0.  */
+          fail ("gcry_pk_sign test %d unexpectedly set the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+      else if (in_fips_mode && tv[tvidx].expect_failure && !ec)
+        {
+          /* Success with the FIPS service indicator != 0 expected, but == 0.  */
+          fail ("gcry_pk_sign test %d unexpectedly cleared the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+
+      err = gcry_pk_verify (s_sig, s_data, s_pk);
+      if (err)
+        {
+          fail ("gcry_pk_verify failed for test: %s", gpg_strerror (err));
+          goto next;
+        }
+
+      ec = gcry_get_fips_service_indicator ();
+      if (ec == GPG_ERR_INV_OP)
+        {
+          /* libgcrypt is old, no support of the FIPS service indicator.  */
+          fail ("gcry_pk_verify test %d unexpectedly failed to check the FIPS service indicator.\n",
+                tvidx);
+          goto next;
+        }
+
+      if (in_fips_mode && !tv[tvidx].expect_failure && ec)
+        {
+          /* Success with the FIPS service indicator == 0 expected, but != 0.  */
+          fail ("gcry_pk_verify test %d unexpectedly set the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+      else if (in_fips_mode && tv[tvidx].expect_failure && !ec)
+        {
+          /* Success with the FIPS service indicator != 0 expected, but == 0.  */
+          fail ("gcry_pk_verify test %d unexpectedly cleared the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+
+    next:
+      gcry_sexp_release (s_sig);
+      gcry_sexp_release (s_data);
+      gcry_sexp_release (s_pk);
+      gcry_sexp_release (s_sk);
+    }
+}
+
+/* Check gcry_pk_hash_sign, gcry_pk_hash_verify API.  */
+static void
+check_pk_hash_sign_verify (void)
+{
+  static struct {
+    int md_algo;
+    const char *prvkey;
+    const char *pubkey;
+    const char *data_tmpl;
+    const char *k;
+    int expect_failure;
+    int expect_failure_hash;
+  } tv[] = {
+    {                           /* non-compliant hash */
+      GCRY_MD_BLAKE2B_512,
+      "(private-key (ecc (curve nistp256)"
+      " (d #519b423d715f8b581f4fa8ee59f4771a5b44c8130b4e3eacca54a56dda72b464#)))",
+      "(public-key (ecc (curve nistp256)"
+      " (q #041ccbe91c075fc7f4f033bfa248db8fccd3565de94bbfb12f3c59ff46c271bf83"
+      "ce4014c68811f9a21a1fdb2c0e6113e06db7ca93b7404e78dc7ccd5ca89a4ca9#)))",
+      "(data(flags raw)(hash %s %b)(label %b))",
+      "94a1bbb14b906a61a280f245f9e93c7f3b4a6247824f5d33b9670787642a68de",
+      1, 1
+    },
+    {                           /* non-compliant curve */
+      GCRY_MD_SHA256,
+      "(private-key (ecc (curve secp256k1)"
+      " (d #c2cdf0a8b0a83b35ace53f097b5e6e6a0a1f2d40535eff1cf434f52a43d59d8f#)))",
+
+      "(public-key (ecc (curve secp256k1)"
+      " (q #046fcc37ea5e9e09fec6c83e5fbd7a745e3eee81d16ebd861c9e66f55518c19798"
+      "4e9f113c07f875691df8afc1029496fc4cb9509b39dcd38f251a83359cc8b4f7#)))",
+      "(data(flags raw)(hash %s %b)(label %b))",
+      "94a1bbb14b906a61a280f245f9e93c7f3b4a6247824f5d33b9670787642a68de",
+      1, 0
+    },
+    {
+      GCRY_MD_SHA256,
+      "(private-key (ecc (curve nistp256)"
+      " (d #519b423d715f8b581f4fa8ee59f4771a5b44c8130b4e3eacca54a56dda72b464#)))",
+      "(public-key (ecc (curve nistp256)"
+      " (q #041ccbe91c075fc7f4f033bfa248db8fccd3565de94bbfb12f3c59ff46c271bf83"
+      "ce4014c68811f9a21a1fdb2c0e6113e06db7ca93b7404e78dc7ccd5ca89a4ca9#)))",
+      "(data(flags raw)(hash %s %b)(label %b))",
+      "94a1bbb14b906a61a280f245f9e93c7f3b4a6247824f5d33b9670787642a68de",
+      1, 0,
+    }
+  };
+  int tvidx;
+  gpg_error_t err;
+  gpg_err_code_t ec;
+  const char *msg = "Takerufuji Mikiya, who won the championship in March 2024";
+  int msglen;
+
+  msglen = strlen (msg);
+  for (tvidx=0; tvidx < DIM(tv); tvidx++)
+    {
+      gcry_md_hd_t hd = NULL;
+      gcry_sexp_t s_sk = NULL;
+      gcry_sexp_t s_pk = NULL;
+      void *buffer = NULL;
+      size_t buflen;
+      gcry_ctx_t ctx = NULL;
+      gcry_sexp_t s_sig= NULL;
+
+      if (verbose)
+        info ("checking gcry_pk_hash_ test %d\n", tvidx);
+
+      err = gcry_md_open (&hd, tv[tvidx].md_algo, 0);
+      if (err)
+        {
+          fail ("algo %d, gcry_md_open failed: %s\n", tv[tvidx].md_algo,
+                gpg_strerror (err));
+          goto next;
+        }
+
+      ec = gcry_get_fips_service_indicator ();
+      if (ec == GPG_ERR_INV_OP)
+        {
+          /* libgcrypt is old, no support of the FIPS service indicator.  */
+          fail ("gcry_pk_hash test %d unexpectedly failed to check the FIPS service indicator.\n",
+                tvidx);
+          goto next;
+        }
+
+      if (in_fips_mode && !tv[tvidx].expect_failure_hash && ec)
+        {
+          /* Success with the FIPS service indicator == 0 expected, but != 0.  */
+          fail ("gcry_pk_hash test %d unexpectedly set the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+      else if (in_fips_mode && tv[tvidx].expect_failure_hash && !ec)
+        {
+          /* Success with the FIPS service indicator != 0 expected, but == 0.  */
+          fail ("gcry_pk_hash test %d unexpectedly cleared the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+
+      err = gcry_sexp_build (&s_sk, NULL, tv[tvidx].prvkey);
+      if (err)
+        {
+          fail ("error building SEXP for test, %s: %s",
+                "sk", gpg_strerror (err));
+          goto next;
+        }
+
+      err = gcry_sexp_build (&s_pk, NULL, tv[tvidx].pubkey);
+      if (err)
+        {
+          fail ("error building SEXP for test, %s: %s",
+                "pk", gpg_strerror (err));
+          goto next;
+        }
+
+      if (!(buffer = hex2buffer (tv[tvidx].k, &buflen)))
+        {
+          fail ("error parsing for test, %s: %s",
+                "msg", "invalid hex string");
+          goto next;
+        }
+
+      err = gcry_pk_random_override_new (&ctx, buffer, buflen);
+      if (err)
+        {
+          fail ("error setting 'k' for test: %s",
+                gpg_strerror (err));
+          goto next;
+        }
+
+      gcry_md_write (hd, msg, msglen);
+
+      err = gcry_pk_hash_sign (&s_sig, tv[tvidx].data_tmpl, s_sk, hd, ctx);
+      if (err)
+        {
+          fail ("gcry_pk_hash_sign failed: %s", gpg_strerror (err));
+          goto next;
+        }
+
+      ec = gcry_get_fips_service_indicator ();
+      if (ec == GPG_ERR_INV_OP)
+        {
+          /* libgcrypt is old, no support of the FIPS service indicator.  */
+          fail ("gcry_pk_hash_sign test %d unexpectedly failed to check the FIPS service indicator.\n",
+                tvidx);
+          goto next;
+        }
+
+      if (in_fips_mode && !tv[tvidx].expect_failure && ec)
+        {
+          /* Success with the FIPS service indicator == 0 expected, but != 0.  */
+          fail ("gcry_pk_hash_sign test %d unexpectedly set the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+      else if (in_fips_mode && tv[tvidx].expect_failure && !ec)
+        {
+          /* Success with the FIPS service indicator != 0 expected, but == 0.  */
+          fail ("gcry_pk_hash_sign test %d unexpectedly cleared the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+
+      err = gcry_pk_hash_verify (s_sig, tv[tvidx].data_tmpl, s_pk, hd, ctx);
+      if (err)
+        {
+          fail ("gcry_pk_hash_verify failed for test: %s",
+                gpg_strerror (err));
+          goto next;
+        }
+
+      ec = gcry_get_fips_service_indicator ();
+      if (ec == GPG_ERR_INV_OP)
+        {
+          /* libgcrypt is old, no support of the FIPS service indicator.  */
+          fail ("gcry_pk_hash_verify test %d unexpectedly failed to check the FIPS service indicator.\n",
+                tvidx);
+          goto next;
+        }
+
+      if (in_fips_mode && !tv[tvidx].expect_failure && ec)
+        {
+          /* Success with the FIPS service indicator == 0 expected, but != 0.  */
+          fail ("gcry_pk_hash_verify test %d unexpectedly set the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+      else if (in_fips_mode && tv[tvidx].expect_failure && !ec)
+        {
+          /* Success with the FIPS service indicator != 0 expected, but == 0.  */
+          fail ("gcry_pk_hash_verify test %d unexpectedly cleared the indicator in FIPS mode.\n",
+                tvidx);
+          goto next;
+        }
+
+    next:
+      gcry_sexp_release (s_sig);
+      xfree (buffer);
+      gcry_ctx_release (ctx);
+      gcry_sexp_release (s_pk);
+      gcry_sexp_release (s_sk);
+      if (hd)
+        gcry_md_close (hd);
+    }
+}
+
 /* Check gcry_cipher_open, gcry_cipher_setkey, gcry_cipher_encrypt,
    gcry_cipher_decrypt, gcry_cipher_close API.  */
 static void
-check_cipher_o_s_e_d_c (void)
+check_cipher_o_s_e_d_c (int reject)
 {
   static struct {
     int algo;
+    int mode;
     const char *key;
     int keylen;
+    const char *tag;
+    int taglen;
     const char *expect;
     int expect_failure;
-    unsigned int flags;
   } tv[] = {
 #if USE_DES
-      { GCRY_CIPHER_3DES,
-	"\xe3\x34\x7a\x6b\x0b\xc1\x15\x2c\x64\x2a\x25\xcb\xd3\xbc\x31\xab"
-	"\xfb\xa1\x62\xa8\x1f\x19\x7c\x15", 24,
-        "\x3f\x1a\xb8\x83\x18\x8b\xb5\x97", 1 },
-      { GCRY_CIPHER_3DES,
-	"\xe3\x34\x7a\x6b\x0b\xc1\x15\x2c\x64\x2a\x25\xcb\xd3\xbc\x31\xab"
-	"\xfb\xa1\x62\xa8\x1f\x19\x7c\x15", 24,
-        "\x3f\x1a\xb8\x83\x18\x8b\xb5\x97",
-        1, GCRY_CIPHER_FLAG_REJECT_NON_FIPS },
+   { GCRY_CIPHER_3DES, GCRY_CIPHER_MODE_ECB,
+	 "\xe3\x34\x7a\x6b\x0b\xc1\x15\x2c\x64\x2a\x25\xcb\xd3\xbc\x31\xab"
+	 "\xfb\xa1\x62\xa8\x1f\x19\x7c\x15", 24,
+     "", -1,
+     "\x3f\x1a\xb8\x83\x18\x8b\xb5\x97", 1 },
 #endif
-      { GCRY_CIPHER_AES,
-	"\x2b\x7e\x15\x16\x28\xae\xd2\xa6\xab\xf7\x15\x88\x09\xcf\x4f\x3c", 16,
-        "\x5c\x71\xd8\x5d\x26\x5e\xcd\xb5\x95\x40\x41\xab\xff\x25\x6f\xd1" }
+   { GCRY_CIPHER_AES, GCRY_CIPHER_MODE_ECB,
+	 "\x2b\x7e\x15\x16\x28\xae\xd2\xa6\xab\xf7\x15\x88\x09\xcf\x4f\x3c", 16,
+     "", -1,
+     "\x5c\x71\xd8\x5d\x26\x5e\xcd\xb5\x95\x40\x41\xab\xff\x25\x6f\xd1" },
+   { GCRY_CIPHER_AES128, GCRY_CIPHER_MODE_SIV,
+	 "\xff\xfe\xfd\xfc\xfb\xfa\xf9\xf8\xf7\xf6\xf5\xf4\xf3\xf2\xf1\xf0"
+	 "\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9\xfa\xfb\xfc\xfd\xfe\xff", 32,
+     "\x51\x66\x54\xc4\xe1\xb5\xd9\x37\x31\x52\xdb\xea\x35\x10\x8b\x7b", 16,
+     "\x83\x69\xf6\xf3\x20\xff\xa2\x72\x31\x67\x15\xcf\xf4\x75\x01\x9a", 1 }
   };
+
   const char *pt = "Shohei Ohtani 2024: 54 HR, 59 SB";
   int ptlen;
   int tvidx;
   unsigned char out[MAX_DATA_LEN];
   gpg_error_t err;
+
+  unsigned char tag[16];
+  size_t taglen = 0;
 
   ptlen = strlen (pt);
   assert (ptlen == 32);
@@ -86,15 +945,15 @@ check_cipher_o_s_e_d_c (void)
                  tvidx);
 
       blklen = gcry_cipher_get_algo_blklen (tv[tvidx].algo);
+
       assert (blklen != 0);
       assert (blklen <= ptlen);
       assert (blklen <= DIM (out));
-      err = gcry_cipher_open (&h, tv[tvidx].algo, GCRY_CIPHER_MODE_ECB,
-                              tv[tvidx].flags);
+      assert (tv[tvidx].taglen <= 16);
+      err = gcry_cipher_open (&h, tv[tvidx].algo, tv[tvidx].mode, 0);
       if (err)
         {
-          if (in_fips_mode && (tv[tvidx].flags & GCRY_CIPHER_FLAG_REJECT_NON_FIPS)
-              && tv[tvidx].expect_failure)
+          if (in_fips_mode && reject && tv[tvidx].expect_failure)
             /* Here, an error is expected */
             ;
           else
@@ -104,8 +963,7 @@ check_cipher_o_s_e_d_c (void)
         }
       else
         {
-          if (in_fips_mode && (tv[tvidx].flags & GCRY_CIPHER_FLAG_REJECT_NON_FIPS)
-              && tv[tvidx].expect_failure)
+          if (in_fips_mode && reject && tv[tvidx].expect_failure)
             /* This case, an error is expected, but we observed success */
             fail ("gcry_cipher_open test %d unexpectedly succeeded\n", tvidx);
         }
@@ -143,6 +1001,18 @@ check_cipher_o_s_e_d_c (void)
           continue;
         }
 
+      if (tv[tvidx].taglen >= 0)
+        {
+          err = gcry_cipher_info (h, GCRYCTL_GET_TAGLEN, NULL, &taglen);
+          if (err)
+              fail ("gcry_cipher_info %d failed: %s\n", tvidx,
+                    gpg_strerror (err));
+
+          if (taglen != tv[tvidx].taglen)
+              fail ("gcry_cipher_info %d failed: taglen mismatch %d != %ld\n", tvidx,
+                    tv[tvidx].taglen, taglen);
+        }
+
       err = gcry_cipher_encrypt (h, out, MAX_DATA_LEN, pt, blklen);
       if (err)
         {
@@ -162,6 +1032,35 @@ check_cipher_o_s_e_d_c (void)
             fprintf (stderr, " %02x", out[i]);
           putc ('\n', stderr);
         }
+
+      if (tv[tvidx].taglen >= 0)
+        {
+           err = gcry_cipher_gettag (h, tag, tv[tvidx].taglen);
+           if (err)
+              fail ("gcry_cipher_gettag %d failed: %s", tvidx,
+                     gpg_strerror(err));
+
+          if (memcmp (tv[tvidx].tag, tag, tv[tvidx].taglen))
+            {
+              int i;
+
+              fail ("gcry_cipher_gettag %d: tag mismatch\n", tvidx);
+              fputs ("got:", stderr);
+              for (i=0; i < 16 ; i++)
+                fprintf (stderr, " %02x", tag[i]);
+              putc ('\n', stderr);
+            }
+
+          err = gcry_cipher_reset (h);
+          if (err)
+            fail("gcry_cipher_reset %d failed: %s", tvidx,
+                  gpg_strerror(err));
+
+          err = gcry_cipher_set_decryption_tag (h, tag, 16);
+          if (err)
+            fail ("gcry_cipher_set_decryption_tag %d failed: %s\n", tvidx,
+                   gpg_strerror (err));
+      }
 
       err = gcry_cipher_decrypt (h, out, blklen, NULL, 0);
       if (err)
@@ -190,7 +1089,7 @@ check_cipher_o_s_e_d_c (void)
 /* Check gcry_mac_open, gcry_mac_write, gcry_mac_write, gcry_mac_read,
    gcry_mac_close API.  */
 static void
-check_mac_o_w_r_c (void)
+check_mac_o_w_r_c (int reject)
 {
   static struct {
     int algo;
@@ -200,19 +1099,15 @@ check_mac_o_w_r_c (void)
     int keylen;
     const char *expect;
     int expect_failure;
-    unsigned int flags;
   } tv[] = {
 #if USE_MD5
     { GCRY_MAC_HMAC_MD5, "hmac input abc", 14, "hmac key input", 14,
       "\x0d\x72\xd0\x60\xaf\x34\xf2\xca\x33\x58\xa9\xcc\xd3\x5a\xac\xb5", 1 },
-    { GCRY_MAC_HMAC_MD5, "hmac input abc", 14, "hmac key input", 14,
-      "\x0d\x72\xd0\x60\xaf\x34\xf2\xca\x33\x58\xa9\xcc\xd3\x5a\xac\xb5", 1,
-      GCRY_MAC_FLAG_REJECT_NON_FIPS },
 #endif
 #if USE_SHA1
     { GCRY_MAC_HMAC_SHA1, "hmac input abc", 14, "hmac key input", 14,
       "\xc9\x62\x9d\x16\x0f\xc2\xc4\xcd\x38\xac\x3a\x00\xdc\x29\x61\x03"
-      "\x69\x50\xd7\x3a" },
+      "\x69\x50\xd7\x3a", 1 },
 #endif
     { GCRY_MAC_HMAC_SHA256, "hmac input abc", 14, "hmac key input", 14,
       "\x6a\xda\x4d\xd5\xf3\xa7\x32\x9d\xd2\x55\xc0\x7f\xe6\x0a\x93\xb8"
@@ -263,11 +1158,10 @@ check_mac_o_w_r_c (void)
       expectlen = gcry_mac_get_algo_maclen (tv[tvidx].algo);
       assert (expectlen != 0);
       assert (expectlen <= DIM (mac));
-      err = gcry_mac_open (&h, tv[tvidx].algo, tv[tvidx].flags, NULL);
+      err = gcry_mac_open (&h, tv[tvidx].algo, 0, NULL);
       if (err)
         {
-          if (in_fips_mode && (tv[tvidx].flags & GCRY_MAC_FLAG_REJECT_NON_FIPS)
-              && tv[tvidx].expect_failure)
+          if (in_fips_mode && reject && tv[tvidx].expect_failure)
             /* Here, an error is expected */
             ;
           else
@@ -277,8 +1171,7 @@ check_mac_o_w_r_c (void)
         }
       else
         {
-          if (in_fips_mode && (tv[tvidx].flags & GCRY_MAC_FLAG_REJECT_NON_FIPS)
-              && tv[tvidx].expect_failure)
+          if (in_fips_mode && reject && tv[tvidx].expect_failure)
             /* This case, an error is expected, but we observed success */
             fail ("gcry_mac_open test %d unexpectedly succeeded\n", tvidx);
         }
@@ -355,7 +1248,7 @@ check_mac_o_w_r_c (void)
 /* Check gcry_md_open, gcry_md_write, gcry_md_write, gcry_md_read,
    gcry_md_close API.  */
 static void
-check_md_o_w_r_c (void)
+check_md_o_w_r_c (int reject)
 {
   static struct {
     int algo;
@@ -363,19 +1256,15 @@ check_md_o_w_r_c (void)
     int datalen;
     const char *expect;
     int expect_failure;
-    unsigned int flags;
   } tv[] = {
 #if USE_MD5
     { GCRY_MD_MD5, "abc", 3,
       "\x90\x01\x50\x98\x3C\xD2\x4F\xB0\xD6\x96\x3F\x7D\x28\xE1\x7F\x72", 1 },
-    { GCRY_MD_MD5, "abc", 3,
-      "\x90\x01\x50\x98\x3C\xD2\x4F\xB0\xD6\x96\x3F\x7D\x28\xE1\x7F\x72", 1,
-      GCRY_MD_FLAG_REJECT_NON_FIPS },
 #endif
 #if USE_SHA1
     { GCRY_MD_SHA1, "abc", 3,
       "\xA9\x99\x3E\x36\x47\x06\x81\x6A\xBA\x3E"
-      "\x25\x71\x78\x50\xC2\x6C\x9C\xD0\xD8\x9D" },
+      "\x25\x71\x78\x50\xC2\x6C\x9C\xD0\xD8\x9D", 1 },
 #endif
     { GCRY_MD_SHA256, "abc", 3,
       "\xba\x78\x16\xbf\x8f\x01\xcf\xea\x41\x41\x40\xde\x5d\xae\x22\x23"
@@ -424,11 +1313,10 @@ check_md_o_w_r_c (void)
 
       expectlen = gcry_md_get_algo_dlen (tv[tvidx].algo);
       assert (expectlen != 0);
-      err = gcry_md_open (&h, tv[tvidx].algo, tv[tvidx].flags);
+      err = gcry_md_open (&h, tv[tvidx].algo, 0);
       if (err)
         {
-          if (in_fips_mode && (tv[tvidx].flags & GCRY_MD_FLAG_REJECT_NON_FIPS)
-              && tv[tvidx].expect_failure)
+          if (in_fips_mode && reject && tv[tvidx].expect_failure)
             /* Here, an error is expected */
             ;
           else
@@ -438,8 +1326,7 @@ check_md_o_w_r_c (void)
         }
       else
         {
-          if (in_fips_mode && (tv[tvidx].flags & GCRY_MD_FLAG_REJECT_NON_FIPS)
-              && tv[tvidx].expect_failure)
+          if (in_fips_mode && reject && tv[tvidx].expect_failure)
             /* This case, an error is expected, but we observed success */
             fail ("gcry_md_open test %d unexpectedly succeeded\n", tvidx);
         }
@@ -503,7 +1390,7 @@ check_hash_buffer (void)
 #if USE_SHA1
     { GCRY_MD_SHA1, "abc", 3,
       "\xA9\x99\x3E\x36\x47\x06\x81\x6A\xBA\x3E"
-      "\x25\x71\x78\x50\xC2\x6C\x9C\xD0\xD8\x9D" },
+      "\x25\x71\x78\x50\xC2\x6C\x9C\xD0\xD8\x9D", 1 },
 #endif
     { GCRY_MD_SHA256, "abc", 3,
       "\xba\x78\x16\xbf\x8f\x01\xcf\xea\x41\x41\x40\xde\x5d\xae\x22\x23"
@@ -612,7 +1499,7 @@ check_hash_buffers (void)
     { GCRY_MD_SHA1, "abc", 3,
       "key", 3,
       "\x4f\xd0\xb2\x15\x27\x6e\xf1\x2f\x2b\x3e"
-      "\x4c\x8e\xca\xc2\x81\x14\x98\xb6\x56\xfc" },
+      "\x4c\x8e\xca\xc2\x81\x14\x98\xb6\x56\xfc", 1 },
 #endif
     { GCRY_MD_SHA256, "abc", 3,
       "key", 3,
@@ -737,13 +1624,13 @@ check_kdf_derive (void)
   } tv[] = {
     {
       "passwordPASSWORDpassword", 24,
-      GCRY_KDF_PBKDF2, GCRY_MD_SHA1,
+      GCRY_KDF_PBKDF2, GCRY_MD_SHA256,
       "saltSALTsaltSALTsaltSALTsaltSALTsalt", 36,
       4096,
       25,
-      "\x3d\x2e\xec\x4f\xe4\x1c\x84\x9b\x80\xc8"
-      "\xd8\x36\x62\xc0\xe4\x4a\x8b\x29\x1a\x96"
-      "\x4c\xf2\xf0\x70\x38",
+      "\x34\x8c\x89\xdb\xcb\xd3\x2b\x2f\x32\xd8"
+      "\x14\xb8\x11\x6e\x84\xcf\x2b\x17\x34\x7e"
+      "\xbc\x18\x00\x18\x1c",
       0
     },
     {
@@ -760,45 +1647,45 @@ check_kdf_derive (void)
     },
     {
       "passwor", 7,
-      GCRY_KDF_PBKDF2, GCRY_MD_SHA1,
+      GCRY_KDF_PBKDF2, GCRY_MD_SHA256,
       "saltSALTsaltSALTsaltSALTsaltSALTsalt", 36,
       4096,
       25,
-      "\xf4\x93\xee\x2b\xbf\x44\x0b\x9e\x64\x53"
-      "\xc2\xb3\x87\xdc\x73\xf8\xfd\xe6\x97\xda"
-      "\xb8\x24\xa0\x26\x50",
+      "\x2d\x72\xa9\xe5\x4e\x2f\x37\x6e\xe5\xe4"
+      "\xf5\x55\x76\xb5\xaa\x49\x73\x01\x97\x1c"
+      "\xad\x3a\x7c\xc4\xde",
       1 /* not-compliant because passphrase len is too small */
     },
     {
       "passwordPASSWORDpassword", 24,
-      GCRY_KDF_PBKDF2, GCRY_MD_SHA1,
+      GCRY_KDF_PBKDF2, GCRY_MD_SHA256,
       "saltSALTsaltSAL", 15,
       4096,
       25,
-      "\x14\x05\xa4\x2a\xf4\xa8\x12\x14\x7b\x65"
-      "\x8f\xaa\xf0\x7f\x25\xe5\x0f\x0b\x2b\xb7"
-      "\xcf\x8d\x29\x23\x4b",
+      "\xf7\x55\xdd\x3c\x5e\xfb\x23\x06\xa7\x85"
+      "\x94\xa7\x31\x12\x45\xcf\x5a\x4b\xdc\x09"
+      "\xee\x65\x4b\x50\x3f",
       1 /* not-compliant because salt len is too small */
     },
     {
       "passwordPASSWORDpassword", 24,
-      GCRY_KDF_PBKDF2, GCRY_MD_SHA1,
+      GCRY_KDF_PBKDF2, GCRY_MD_SHA256,
       "saltSALTsaltSALTsaltSALTsaltSALTsalt", 36,
       999,
       25,
-      "\xac\xf8\xb4\x67\x41\xc7\xf3\xd1\xa0\xc0"
-      "\x08\xbe\x9b\x23\x96\x78\xbd\x93\xda\x4a"
-      "\x30\xd4\xfb\xf0\x33",
+      "\x09\x3e\x1a\xd8\x63\x30\x71\x9c\x17\xcf"
+      "\xb0\x53\x3e\x1f\xc8\x51\x29\x71\x54\x28"
+      "\x5d\xf7\x8e\x41\xaa",
       1 /* not-compliant because too few iterations */
     },
     {
       "passwordPASSWORDpassword", 24,
-      GCRY_KDF_PBKDF2, GCRY_MD_SHA1,
+      GCRY_KDF_PBKDF2, GCRY_MD_SHA256,
       "saltSALTsaltSALTsaltSALTsaltSALTsalt", 36,
       4096,
       13,
-      "\x3d\x2e\xec\x4f\xe4\x1c\x84\x9b\x80\xc8"
-      "\xd8\x36\x62",
+      "\x34\x8c\x89\xdb\xcb\xd3\x2b\x2f\x32\xd8"
+      "\x14\xb8\x11",
       1 /* not-compliant because key size too small */
     },
     {
@@ -930,12 +1817,33 @@ main (int argc, char **argv)
   if (debug)
     xgcry_control ((GCRYCTL_SET_DEBUG_FLAGS, 1u , 0));
 
+  xgcry_control ((GCRYCTL_FIPS_REJECT_NON_FIPS, 0));
+
   check_kdf_derive ();
   check_hash_buffer ();
   check_hash_buffers ();
-  check_md_o_w_r_c ();
-  check_mac_o_w_r_c ();
-  check_cipher_o_s_e_d_c ();
+  check_md_o_w_r_c (0);
+  check_mac_o_w_r_c (0);
+  check_cipher_o_s_e_d_c (0);
+  check_pk_hash_sign_verify ();
+  check_pk_s_v (0);
+  check_pk_g_t_n_c (0);
+
+  xgcry_control ((GCRYCTL_FIPS_REJECT_NON_FIPS,
+                  (GCRY_FIPS_FLAG_REJECT_MD_MD5
+                   | GCRY_FIPS_FLAG_REJECT_CIPHER_MODE
+                   | GCRY_FIPS_FLAG_REJECT_PK_MD
+                   | GCRY_FIPS_FLAG_REJECT_PK_GOST_SM2
+                   | GCRY_FIPS_FLAG_REJECT_MD_SHA1
+                   | GCRY_FIPS_FLAG_REJECT_PK_ECC_K
+                   | GCRY_FIPS_FLAG_REJECT_PK_FLAGS
+                   | GCRY_FIPS_FLAG_REJECT_COMPAT110)));
+
+  check_md_o_w_r_c (1);
+  check_mac_o_w_r_c (1);
+  check_cipher_o_s_e_d_c (1);
+  check_pk_s_v (1);
+  check_pk_g_t_n_c (1);
 
   return !!error_count;
 }

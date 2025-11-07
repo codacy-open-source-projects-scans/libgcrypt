@@ -55,6 +55,9 @@
 #  r4 = mlen
 #  r5 = m
 #
+
+.machine        "any"
+.abiversion     2
 .text
 
 .macro clear_vec_regs
@@ -867,7 +870,7 @@ Out_no_poly1305:
 	li	3, 0
 	blr
 
-.data
+.section .rodata
 .align 5
 rmask:
 .byte	0xff, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f

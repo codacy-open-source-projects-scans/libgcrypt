@@ -505,12 +505,71 @@ _gcry_cipher_open (gcry_cipher_hd_t *handle,
 }
 
 
+/* Return an error if the give cipher mode is non-FIPS compliant.  */
+static gcry_err_code_t
+cipher_modes_fips_compliance (enum gcry_cipher_modes mode)
+{
+  switch (mode)
+    {
+    case GCRY_CIPHER_MODE_ECB:
+    case GCRY_CIPHER_MODE_CBC:
+    case GCRY_CIPHER_MODE_CFB:
+    case GCRY_CIPHER_MODE_CFB8:
+    case GCRY_CIPHER_MODE_OFB:
+    case GCRY_CIPHER_MODE_CTR:
+    case GCRY_CIPHER_MODE_CCM:
+    case GCRY_CIPHER_MODE_XTS:
+    case GCRY_CIPHER_MODE_AESWRAP:
+      return 0;
+    case GCRY_CIPHER_MODE_NONE:
+    case GCRY_CIPHER_MODE_STREAM:
+    case GCRY_CIPHER_MODE_GCM:
+    case GCRY_CIPHER_MODE_POLY1305:
+    case GCRY_CIPHER_MODE_OCB:
+    case GCRY_CIPHER_MODE_EAX:
+    case GCRY_CIPHER_MODE_SIV:
+    case GCRY_CIPHER_MODE_GCM_SIV:
+      break;
+    }
+  return GPG_ERR_NOT_SUPPORTED;
+}
+
+
+/* This is similar to cipher_modes_fips_compliance but only for the
+ * internal modes (i.e. CMAC).  Return an error if the mode is
+ * non-FIPS compliant. */
+static gcry_err_code_t
+cipher_int_modes_fips_compliance (enum gcry_cipher_internal_modes mode)
+{
+  switch (mode)
+    {
+    case GCRY_CIPHER_MODE_INTERNAL:
+      break;
+    case GCRY_CIPHER_MODE_CMAC:
+      return 0;
+    }
+  return GPG_ERR_NOT_SUPPORTED;
+}
+
+
+/* Return an error if the give cipher mode is non-FIPS compliant. The
+ * mode is not an enum here so that we can use it for real modes and
+ * for internal modes.  */
+gcry_err_code_t
+_gcry_cipher_mode_fips_compliance (int mode)
+{
+  if (mode >= GCRY_CIPHER_MODE_INTERNAL)
+    return cipher_int_modes_fips_compliance (mode);
+  else
+    return cipher_modes_fips_compliance (mode);
+}
+
+
 gcry_err_code_t
 _gcry_cipher_open_internal (gcry_cipher_hd_t *handle,
 			    int algo, int mode, unsigned int flags)
 {
   int secure = !!(flags & GCRY_CIPHER_SECURE);
-  int reject_non_fips = !!(flags & GCRY_CIPHER_FLAG_REJECT_NON_FIPS);
   gcry_cipher_spec_t *spec;
   gcry_cipher_hd_t h = NULL;
   gcry_err_code_t err;
@@ -524,14 +583,25 @@ _gcry_cipher_open_internal (gcry_cipher_hd_t *handle,
     err = GPG_ERR_CIPHER_ALGO;
   else if (spec->flags.disabled)
     err = GPG_ERR_CIPHER_ALGO;
-  else if (!spec->flags.fips && fips_mode ())
+  else if (fips_mode ())
     {
-      if (reject_non_fips)
-        err = GPG_ERR_CIPHER_ALGO;
-      else
+      if (!spec->flags.fips)
         {
-          fips_service_indicator_mark_non_compliant ();
-          err = 0;
+          if (fips_check_rejection (GCRY_FIPS_FLAG_REJECT_CIPHER))
+            err = GPG_ERR_CIPHER_ALGO;
+          else
+            {
+              fips_service_indicator_mark_non_compliant ();
+              err = 0;
+            }
+        }
+      else if ((err = _gcry_cipher_mode_fips_compliance (mode)))
+        {
+          if (!fips_check_rejection (GCRY_FIPS_FLAG_REJECT_CIPHER_MODE))
+            {
+              fips_service_indicator_mark_non_compliant ();
+              err = 0;
+            }
         }
     }
   else
@@ -544,8 +614,7 @@ _gcry_cipher_open_internal (gcry_cipher_hd_t *handle,
 		     | GCRY_CIPHER_ENABLE_SYNC
 		     | GCRY_CIPHER_CBC_CTS
 		     | GCRY_CIPHER_CBC_MAC
-                     | GCRY_CIPHER_EXTENDED
-                     | GCRY_CIPHER_FLAG_REJECT_NON_FIPS))
+                     | GCRY_CIPHER_EXTENDED))
 	  || ((flags & GCRY_CIPHER_CBC_CTS) && (flags & GCRY_CIPHER_CBC_MAC))))
     err = GPG_ERR_CIPHER_ALGO;
 
@@ -776,7 +845,7 @@ cipher_setkey (gcry_cipher_hd_t c, byte *key, size_t keylen)
 	     Key Generation Requirements" for details.  */
 	  if (buf_eq_const (key, key + keylen, keylen))
             {
-              if ((c->flags & GCRY_CIPHER_FLAG_REJECT_NON_FIPS))
+              if (fips_check_rejection (GCRY_FIPS_FLAG_REJECT_CIPHER))
                 return GPG_ERR_WEAK_KEY;
               else
                 fips_service_indicator_mark_non_compliant ();

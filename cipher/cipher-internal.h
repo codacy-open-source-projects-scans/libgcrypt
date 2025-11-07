@@ -136,6 +136,23 @@
 #endif
 #endif /* GCM_USE_PPC_VPMSUM */
 
+/* GCM_USE_RISCV_ZBB_ZBC indicates whether to compile GCM with RISC-V Zbb+Zbc
+ * code. */
+#undef GCM_USE_RISCV_ZBB_ZBC
+#if defined (__riscv) && (__riscv_xlen == 64) && \
+    defined(HAVE_GCC_INLINE_ASM_RISCV)
+# define GCM_USE_RISCV_ZBB_ZBC 1
+#endif
+
+/* GCM_USE_RISCV_V_ZVKG indicates whether to enable RISC-V vector Zvkg
+ * code. */
+#undef GCM_USE_RISCV_ZVKG
+#if defined (__riscv) && \
+    defined(HAVE_COMPATIBLE_CC_RISCV_VECTOR_INTRINSICS) && \
+    defined(HAVE_COMPATIBLE_CC_RISCV_VECTOR_CRYPTO_INTRINSICS)
+# define GCM_USE_RISCV_ZVKG 1
+#endif
+
 typedef unsigned int (*ghash_fn_t) (gcry_cipher_hd_t c, byte *result,
                                     const byte *buf, size_t nblocks);
 
@@ -239,7 +256,7 @@ struct gcry_cipher_handle
   gcry_cipher_spec_t *spec;
 
   /* The algorithm id.  This is a hack required because the module
-     interface does not easily allow to retrieve this value. */
+     interface does not easily allow retrieving this value. */
   int algo;
 
   /* A structure with function pointers for mode operations. */
@@ -344,7 +361,7 @@ struct gcry_cipher_handle
       } u_tag;
 
       /* Space to save partial input lengths for MAC. */
-      unsigned char macbuf[GCRY_CCM_BLOCK_LEN];
+      unsigned char macbuf[GCRY_GCM_BLOCK_LEN];
       int mac_unused;  /* Number of unprocessed bytes in MACBUF. */
 
       /* byte counters for GCM */
@@ -775,7 +792,7 @@ ocb_get_l (gcry_cipher_hd_t c, u64 n)
         : [low] "r" ((unsigned long)n)
         : "cc");
 #else
-  ntz = _gcry_ctz (n);
+  ntz = _gcry_ctz_no_zero (n);
 #endif
 
   return c->u_mode.ocb.L[ntz];
