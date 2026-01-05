@@ -207,10 +207,8 @@ aes192_riscv_setkey (RIJNDAEL_context *ctx, const byte *key)
 
 #define AES192_KF1_GEN(out, input, round192, vl) \
   ({ \
-      u32 temp_array[4] = { 0, 0, 0, 0 }; \
-      vuint32m1_t temp_vec; \
-      temp_array[3] = (input); \
-      temp_vec = __riscv_vle32_v_u32m1(temp_array, (vl)); \
+      vuint32m1_t temp_vec = __riscv_vmv_v_x_u32m1(0, (vl)); \
+      temp_vec = __riscv_vslide1down_vx_u32m1(temp_vec, (input), (vl)); \
       temp_vec = __riscv_vaeskf1_vi_u32m1(temp_vec, (round192), (vl)); \
       (out) = __riscv_vmv_x_s_u32m1_u32(temp_vec); \
   })
@@ -341,14 +339,36 @@ do_prepare_decryption(RIJNDAEL_context *ctx)
   int rr;
   int r;
 
+#define COPY_KEY() \
+      __riscv_vse32_v_u32m1(dkey + r * 4, \
+			    __riscv_vle32_v_u32m1(ekey + rr * 4, vl), \
+			    vl)
+
   r = 0;
   rr = rounds;
-  for (r = 0, rr = rounds; r <= rounds; r++, rr--)
+  COPY_KEY(); r++; rr--;
+  COPY_KEY(); r++; rr--;
+  COPY_KEY(); r++; rr--;
+  COPY_KEY(); r++; rr--;
+  COPY_KEY(); r++; rr--;
+  COPY_KEY(); r++; rr--;
+  COPY_KEY(); r++; rr--;
+  COPY_KEY(); r++; rr--;
+  COPY_KEY(); r++; rr--;
+  COPY_KEY(); r++; rr--;
+  if (rr > 0)
     {
-      __riscv_vse32_v_u32m1(dkey + r * 4,
-			    __riscv_vle32_v_u32m1(ekey + rr * 4, vl),
-			    vl);
+      COPY_KEY(); r++; rr--;
+      COPY_KEY(); r++; rr--;
+      if (rr > 0)
+	{
+	  COPY_KEY(); r++; rr--;
+	  COPY_KEY(); r++; rr--;
+	}
     }
+  COPY_KEY();
+
+#undef COPY_KEY
 }
 
 void ASM_FUNC_ATTR_NOINLINE FUNC_ATTR_OPT_O2
