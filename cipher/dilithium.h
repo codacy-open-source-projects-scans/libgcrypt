@@ -56,24 +56,24 @@
 #ifdef _GCRYPT_IN_LIBGCRYPT
 /**** Start of the glue code to libgcrypt ****/
 #define dilithium_keypair   _gcry_mldsa_keypair
-#define dilithium_encap     _gcry_mldsa_encap
-#define dilithium_decap     _gcry_mldsa_decap
+#define dilithium_sign      _gcry_mldsa_sign
+#define dilithium_verify    _gcry_mldsa_verify
 /**** End of the glue code ****/
 
 #define DILITHIUM_KEYPAIR_STACK_BURN (128 * 1024)
 #define DILITHIUM_SIGN_STACK_BURN (161 * 1024)
 #define DILITHIUM_VERIFY_STACK_BURN (122 * 1024)
 
-int dilithium_keypair (int algo, uint8_t *pk, uint8_t *sk,
-                       const uint8_t seed[SEEDBYTES]);
-int dilithium_sign (int algo, uint8_t *sig, size_t siglen,
-                    const uint8_t *m, size_t mlen,
-                    const uint8_t *ctx, size_t ctxlen,
-                    const uint8_t *sk, const uint8_t rnd[RNDBYTES]);
-int dilithium_verify (int algo, const uint8_t *sig, size_t siglen,
-                      const uint8_t *m, size_t mlen,
-                      const uint8_t *ctx, size_t ctxlen,
-                      const uint8_t *pk);
+gpg_err_code_t dilithium_keypair (int algo, uint8_t *pk, uint8_t *sk,
+                                  const uint8_t seed[SEEDBYTES]);
+gpg_err_code_t dilithium_sign (int algo, uint8_t *sig, size_t siglen,
+                               const uint8_t *m, size_t mlen,
+                               const uint8_t *ctx, size_t ctxlen,
+                               const uint8_t *sk, const uint8_t rnd[RNDBYTES]);
+gpg_err_code_t dilithium_verify (int algo, const uint8_t *sig, size_t siglen,
+                                 const uint8_t *m, size_t mlen,
+                                 const uint8_t *ctx, size_t ctxlen,
+                                 const uint8_t *pk);
 #endif
 
 #if defined(DILITHIUM_MODE)
