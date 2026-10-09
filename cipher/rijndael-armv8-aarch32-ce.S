@@ -541,6 +541,7 @@ _gcry_aes_cbc_enc_armv8_ce:
   CLEAR_REG(q12)
   CLEAR_REG(q13)
   CLEAR_REG(q14)
+  CLEAR_REG(q15)
 
 .Lcbc_enc_skip:
   pop {r4-r6,pc}
@@ -647,6 +648,7 @@ _gcry_aes_cbc_dec_armv8_ce:
   CLEAR_REG(q12)
   CLEAR_REG(q13)
   CLEAR_REG(q14)
+  CLEAR_REG(q15)
 
 .Lcbc_dec_skip:
   pop {r4-r6,pc}
@@ -732,6 +734,7 @@ _gcry_aes_ecb_enc_armv8_ce:
   CLEAR_REG(q12)
   CLEAR_REG(q13)
   CLEAR_REG(q14)
+  CLEAR_REG(q15)
 
 .Lecb_enc_skip:
   pop {r4-r6,pc}
@@ -790,6 +793,7 @@ _gcry_aes_ecb_dec_armv8_ce:
   CLEAR_REG(q12)
   CLEAR_REG(q13)
   CLEAR_REG(q14)
+  CLEAR_REG(q15)
 
 .Lecb_dec_skip:
   pop {r4-r6,pc}
@@ -866,6 +870,7 @@ _gcry_aes_cfb_enc_armv8_ce:
   CLEAR_REG(q12)
   CLEAR_REG(q13)
   CLEAR_REG(q14)
+  CLEAR_REG(q15)
 
 .Lcfb_enc_skip:
   pop {r4-r6,pc}
@@ -974,6 +979,7 @@ _gcry_aes_cfb_dec_armv8_ce:
   CLEAR_REG(q12)
   CLEAR_REG(q13)
   CLEAR_REG(q14)
+  CLEAR_REG(q15)
 
 .Lcfb_dec_skip:
   pop {r4-r6,pc}
@@ -1001,19 +1007,18 @@ _gcry_aes_ctr_enc_armv8_ce:
    */
 
   vpush {q4-q7}
-  push {r4-r12,lr} /* 4*16 + 4*10 = 104b */
-  ldr r4, [sp, #(104+0)]
-  ldr r5, [sp, #(104+4)]
+  push {r4-r7,lr} /* 4*16 + 4*5 = 84b */
+  ldr r4, [sp, #(84+0)]
+  ldr r5, [sp, #(84+4)]
   cmp r4, #0
   beq .Lctr_enc_skip
 
   cmp r5, #12
-  ldm r3, {r7-r10}
+  ldr r7, [r3, #12]
   vld1.8 {q0}, [r3] /* load IV */
   rev r7, r7
-  rev r8, r8
-  rev r9, r9
-  rev r10, r10
+
+  mov r5, #1
 
   aes_preload_keys(r0, r6);
 
@@ -1026,58 +1031,22 @@ _gcry_aes_ctr_enc_armv8_ce:
     blo .Lctr_enc_loop_##bits; \
     \
   .Lctr_enc_loop4_##bits: \
-    cmp r10, #0xfffffffc; \
+    vmov.i8 q2, #0; \
     sub r4, r4, #4; \
-    blo .Lctr_enc_loop4_##bits##_nocarry; \
-    cmp r9, #0xffffffff; \
-    bne .Lctr_enc_loop4_##bits##_nocarry; \
+    vmov.16 d5[3], r5; \
+    vrev16.8 q1, q0; \
     \
-    adds r10, #1; \
-    vmov q1, q0; \
-    blcs .Lctr_overflow_one; \
-    rev r11, r10; \
-    vmov.32 d1[1], r11; \
-    \
-    adds r10, #1; \
-    vmov q2, q0; \
-    blcs .Lctr_overflow_one; \
-    rev r11, r10; \
-    vmov.32 d1[1], r11; \
-    \
-    adds r10, #1; \
-    vmov q3, q0; \
-    blcs .Lctr_overflow_one; \
-    rev r11, r10; \
-    vmov.32 d1[1], r11; \
-    \
-    adds r10, #1; \
-    vmov q4, q0; \
-    blcs .Lctr_overflow_one; \
-    rev r11, r10; \
-    vmov.32 d1[1], r11; \
-    \
-    b .Lctr_enc_loop4_##bits##_store_ctr; \
-    \
-  .Lctr_enc_loop4_##bits##_nocarry: \
-    \
-    veor q2, q2; \
-    vrev64.8 q1, q0; \
-    vceq.u32 d5, d5; \
-    vadd.u64 q3, q2, q2; \
-    vadd.u64 q4, q3, q2; \
-    vadd.u64 q0, q3, q3; \
-    vsub.u64 q2, q1, q2; \
-    vsub.u64 q3, q1, q3; \
-    vsub.u64 q4, q1, q4; \
-    vsub.u64 q0, q1, q0; \
-    vrev64.8 q1, q1; \
-    vrev64.8 q2, q2; \
-    vrev64.8 q3, q3; \
-    vrev64.8 q0, q0; \
-    vrev64.8 q4, q4; \
-    add r10, #4; \
-    \
-  .Lctr_enc_loop4_##bits##_store_ctr: \
+    vadd.u16 q0, q2, q2; \
+    vadd.u16 q2, q1, q2; \
+    vadd.u16 q3, q1, q0; \
+    vrev16.8 q1, q1; \
+    vadd.u16 q4, q2, q0; \
+    vrev16.8 q2, q2; \
+    vadd.u16 q0, q3, q0; \
+    vrev16.8 q3, q3; \
+    vrev16.8 q4, q4; \
+    vrev16.8 q0, q0; \
+    add r7, #4; \
     \
     vst1.8 {q0}, [r3]; \
     cmp r4, #4; \
@@ -1103,13 +1072,12 @@ _gcry_aes_ctr_enc_armv8_ce:
     \
   .Lctr_enc_loop_##bits: \
     \
-    adds r10, #1; \
+    add r7, #1; \
     vmov q1, q0; \
-    blcs .Lctr_overflow_one; \
-    rev r11, r10; \
+    rev r5, r7; \
     subs r4, r4, #1; \
     vld1.8 {q2}, [r2]!; /* load ciphertext */ \
-    vmov.32 d1[1], r11; \
+    vmov.32 d1[1], r5; \
     \
     do_aes_one##bits(e, mc, q1, q1, ##__VA_ARGS__); \
     \
@@ -1139,22 +1107,11 @@ _gcry_aes_ctr_enc_armv8_ce:
   CLEAR_REG(q12)
   CLEAR_REG(q13)
   CLEAR_REG(q14)
+  CLEAR_REG(q15)
 
 .Lctr_enc_skip:
-  pop {r4-r12,lr}
+  pop {r4-r7,lr}
   vpop {q4-q7}
-  bx lr
-
-.Lctr_overflow_one:
-  adcs r9, #0
-  adcs r8, #0
-  adc r7, #0
-  rev r11, r9
-  rev r12, r8
-  vmov.32 d1[0], r11
-  rev r11, r7
-  vmov.32 d0[1], r12
-  vmov.32 d0[0], r11
   bx lr
 .size _gcry_aes_ctr_enc_armv8_ce,.-_gcry_aes_ctr_enc_armv8_ce;
 
@@ -1201,7 +1158,7 @@ _gcry_aes_ctr32le_enc_armv8_ce:
     blo .Lctr32le_enc_loop_##bits; \
     \
   .Lctr32le_enc_loop4_##bits: \
-    veor q2, q2; \
+    vmov.i8 q2, #0; \
     sub r4, r4, #4; \
     vmov.i64 d4, #0xffffffff; /* q2 <= -1:0:0:0 */ \
     vmov q1, q0; \
@@ -1237,7 +1194,7 @@ _gcry_aes_ctr32le_enc_armv8_ce:
     \
   .Lctr32le_enc_loop_##bits: \
     \
-    veor q2, q2; \
+    vmov.i8 q2, #0; \
     vmov q1, q0; \
     vmov.i64 d4, #0xffffffff; /* q2 <= -1:0:0:0 */ \
     subs r4, r4, #1; \
@@ -1272,6 +1229,7 @@ _gcry_aes_ctr32le_enc_armv8_ce:
   CLEAR_REG(q12)
   CLEAR_REG(q13)
   CLEAR_REG(q14)
+  CLEAR_REG(q15)
 
 .Lctr32le_enc_skip:
   pop {r4-r12,lr}
@@ -1447,6 +1405,7 @@ _gcry_aes_ocb_enc_armv8_ce:
   CLEAR_REG(q12)
   CLEAR_REG(q13)
   CLEAR_REG(q14)
+  CLEAR_REG(q15)
 
   mov r0, #0
   pop {r4-r12,lr}
@@ -1622,6 +1581,7 @@ _gcry_aes_ocb_dec_armv8_ce:
   CLEAR_REG(q12)
   CLEAR_REG(q13)
   CLEAR_REG(q14)
+  CLEAR_REG(q15)
 
   mov r0, #0
   pop {r4-r12,lr}
@@ -1776,6 +1736,7 @@ _gcry_aes_ocb_auth_armv8_ce:
   CLEAR_REG(q12)
   CLEAR_REG(q13)
   CLEAR_REG(q14)
+  CLEAR_REG(q15)
 
   mov r0, #0
   pop {r4-r12,lr}
@@ -1932,6 +1893,7 @@ _gcry_aes_xts_enc_armv8_ce:
   CLEAR_REG(q12)
   CLEAR_REG(q13)
   CLEAR_REG(q14)
+  CLEAR_REG(q15)
 
 .Lxts_enc_skip:
   pop {r4-r12,lr}
@@ -2087,6 +2049,7 @@ _gcry_aes_xts_dec_armv8_ce:
   CLEAR_REG(q12)
   CLEAR_REG(q13)
   CLEAR_REG(q14)
+  CLEAR_REG(q15)
 
 .Lxts_dec_skip:
   pop {r4-r12,lr}

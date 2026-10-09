@@ -911,7 +911,7 @@ _gcry_3des_ctr_enc(void *context, unsigned char *ctr, void *outbuf_arg,
       outbuf += DES_BLOCKSIZE;
       inbuf  += DES_BLOCKSIZE;
       /* Increment the counter.  */
-      cipher_block_add(ctr, 1, DES_BLOCKSIZE);
+      cipher_block_add_be16(ctr, 1, DES_BLOCKSIZE);
     }
 
   wipememory(tmpbuf, sizeof(tmpbuf));
@@ -1217,7 +1217,7 @@ selftest (void)
     unsigned char *p;
     gcry_md_hd_t h;
 
-    if (_gcry_md_open (&h, GCRY_MD_SHA1, 0))
+    if (_gcry_md_open_internal (&h, GCRY_MD_SHA1, 0, 0))
       return "SHA1 not available";
 
     for (i = 0; i < 64; ++i)
@@ -1250,7 +1250,7 @@ do_tripledes_setkey ( void *context, const byte *key, unsigned keylen,
   memset (bulk_ops, 0, sizeof(*bulk_ops));
   bulk_ops->cbc_dec =  _gcry_3des_cbc_dec;
   bulk_ops->cfb_dec =  _gcry_3des_cfb_dec;
-  bulk_ops->ctr_enc =  _gcry_3des_ctr_enc;
+  bulk_ops->ctr16be_enc =  _gcry_3des_ctr_enc;
 
   tripledes_set3keys ( ctx, key, key+8, key+16);
 

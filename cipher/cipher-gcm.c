@@ -255,12 +255,13 @@ do_prefetch_tables (const void *gcmM, size_t gcmM_size)
    * of look-up table are shared between processes.  Modifying counters also
    * causes checksums for pages to change and hint same-page merging algorithm
    * that these pages are frequently changing.  */
-  gcm_table.counter_head++;
-  gcm_table.counter_tail++;
+  u32 counter = gcm_table.counter_head + 1;
+  gcm_table.counter_head = counter;
+  gcm_table.counter_tail = counter;
 
   /* Prefetch look-up tables to cache.  */
   prefetch_table(gcmM, gcmM_size);
-  prefetch_table(&gcm_table, sizeof(gcm_table));
+  prefetch_table(&gcm_table.R, sizeof(gcm_table.R));
 }
 
 #ifdef GCM_TABLES_USE_U64
@@ -691,16 +692,7 @@ setupM (gcry_cipher_hd_t c)
 static inline void
 gcm_bytecounter_add (u32 ctr[2], size_t add)
 {
-  if (sizeof(add) > sizeof(u32))
-    {
-      u32 high_add = ((add >> 31) >> 1) & 0xffffffff;
-      ctr[1] += high_add;
-    }
-
-  ctr[0] += add;
-  if (ctr[0] >= add)
-    return;
-  ++ctr[1];
+  cipher_bytecounter_add (ctr, add);
 }
 
 
@@ -779,16 +771,14 @@ do_ghash_buf(gcry_cipher_hd_t c, byte *hash, const byte *buf,
         }
       if (!buflen)
         {
-          if (!do_padding && unused < blocksize)
-	    {
-	      break;
-	    }
+          if (unused < blocksize)
+            {
+              if (!do_padding)
+                break;
 
-	  n = blocksize - unused;
-	  if (n > 0)
-	    {
-	      memset (&c->u_mode.gcm.macbuf[unused], 0, n);
-	      unused = blocksize;
+              n = blocksize - unused;
+              memset (&c->u_mode.gcm.macbuf[unused], 0, n);
+              unused = blocksize;
 	    }
         }
 
@@ -824,6 +814,11 @@ gcm_ctr_encrypt (gcry_cipher_hd_t c, byte *outbuf, size_t outbuflen,
                  const byte *inbuf, size_t inbuflen)
 {
   gcry_err_code_t err = 0;
+
+  /* Input is capped to 32KiB by gcm_crypt_inner() for better cache
+   * locality.  As side-effect, CTR overflow checks below do not
+   * overflow. */
+  gcry_assert(inbuflen <= 32 * 1024);
 
   while (inbuflen)
     {
@@ -1288,8 +1283,9 @@ _gcry_cipher_gcm_tag (gcry_cipher_hd_t c,
     {
       /* OUTBUFLEN gives the length of the user supplied tag in OUTBUF
        * and thus we need to compare its length first.  */
-      if (!is_tag_length_valid (outbuflen)
-          || !buf_eq_const (outbuf, c->u_mode.gcm.u_tag.tag, outbuflen))
+      if (!is_tag_length_valid (outbuflen))
+	return GPG_ERR_INV_LENGTH;
+      if (!buf_eq_const (outbuf, c->u_mode.gcm.u_tag.tag, outbuflen))
         return GPG_ERR_CHECKSUM;
     }
 

@@ -108,10 +108,6 @@ static int crypto_kem_keypair_derand_3(uint8_t *pk, uint8_t *sk,
 static int crypto_kem_keypair_derand_4(uint8_t *pk, uint8_t *sk,
                                        const uint8_t *coins);
 
-static int crypto_kem_keypair_2(uint8_t *pk, uint8_t *sk);
-static int crypto_kem_keypair_3(uint8_t *pk, uint8_t *sk);
-static int crypto_kem_keypair_4(uint8_t *pk, uint8_t *sk);
-
 static int crypto_kem_enc_derand_2(uint8_t *ct, uint8_t *ss, const uint8_t *pk,
                                    const uint8_t *coins);
 static int crypto_kem_enc_derand_3(uint8_t *ct, uint8_t *ss, const uint8_t *pk,
@@ -119,67 +115,77 @@ static int crypto_kem_enc_derand_3(uint8_t *ct, uint8_t *ss, const uint8_t *pk,
 static int crypto_kem_enc_derand_4(uint8_t *ct, uint8_t *ss, const uint8_t *pk,
                                    const uint8_t *coins);
 
-static int crypto_kem_enc_2(uint8_t *ct, uint8_t *ss, const uint8_t *pk);
-static int crypto_kem_enc_3(uint8_t *ct, uint8_t *ss, const uint8_t *pk);
-static int crypto_kem_enc_4(uint8_t *ct, uint8_t *ss, const uint8_t *pk);
-
 static int crypto_kem_dec_2(uint8_t *ss, const uint8_t *ct, const uint8_t *sk);
 static int crypto_kem_dec_3(uint8_t *ss, const uint8_t *ct, const uint8_t *sk);
 static int crypto_kem_dec_4(uint8_t *ss, const uint8_t *ct, const uint8_t *sk);
 
 void
-kyber_keypair (int algo, uint8_t *pk, uint8_t *sk, const uint8_t *coins)
+kyber_keypair (int algo, uint8_t *pk, uint8_t *sk, const uint8_t *coins,
+               struct kem_genkey_extra_data_s *extra)
 {
+  uint8_t rnd[GCRY_KEM_MLKEM_RANDOM_LEN * 2];  /* For d || z */
+
+  if (!coins)
+    {
+      /* Long term key material. */
+      _gcry_randomize (rnd, sizeof (rnd), GCRY_VERY_STRONG_RANDOM);
+      coins = rnd;
+    }
+
   switch (algo)
     {
     case GCRY_KEM_MLKEM512:
-      if (coins)
-        crypto_kem_keypair_derand_2 (pk, sk, coins);
-      else
-        crypto_kem_keypair_2 (pk, sk);
+      crypto_kem_keypair_derand_2 (pk, sk, coins);
       break;
     case GCRY_KEM_MLKEM768:
     default:
-      if (coins)
-        crypto_kem_keypair_derand_3 (pk, sk, coins);
-      else
-        crypto_kem_keypair_3 (pk, sk);
+      crypto_kem_keypair_derand_3 (pk, sk, coins);
       break;
     case GCRY_KEM_MLKEM1024:
-      if (coins)
-        crypto_kem_keypair_derand_4 (pk, sk, coins);
-      else
-        crypto_kem_keypair_4 (pk, sk);
+      crypto_kem_keypair_derand_4 (pk, sk, coins);
       break;
     }
+
+  if (extra && extra->request.seed)
+    {
+      gcry_assert (extra->seed && extra->seedlen >= sizeof (rnd));
+      memcpy (extra->seed, coins, sizeof rnd);
+      extra->seedlen = sizeof rnd;  /* Adjust to the used size.  */
+    }
+
+  if (coins == rnd)
+    wipememory (rnd, sizeof (rnd));
 }
 
 void
 kyber_encap (int algo, uint8_t *ct, uint8_t *ss, const uint8_t *pk,
              const uint8_t *coins)
 {
+  uint8_t rnd[GCRY_KEM_MLKEM_RANDOM_LEN];
+
+  if (!coins)
+    {
+      /* Per message value, same level as ECDH ephemeral secret. */
+      _gcry_randomize (rnd, sizeof (rnd), GCRY_STRONG_RANDOM);
+      coins = rnd;
+    }
+
   switch (algo)
     {
     case GCRY_KEM_MLKEM512:
-      if (coins)
-        crypto_kem_enc_derand_2 (ct, ss, pk, coins);
-      else
-        crypto_kem_enc_2 (ct, ss, pk);
+      crypto_kem_enc_derand_2 (ct, ss, pk, coins);
       break;
     case GCRY_KEM_MLKEM768:
     default:
-      if (coins)
-        crypto_kem_enc_derand_3 (ct, ss, pk, coins);
-      else
-        crypto_kem_enc_3 (ct, ss, pk);
+      crypto_kem_enc_derand_3 (ct, ss, pk, coins);
       break;
     case GCRY_KEM_MLKEM1024:
-      if (coins)
-        crypto_kem_enc_derand_4 (ct, ss, pk, coins);
-      else
-        crypto_kem_enc_4 (ct, ss, pk);
+      crypto_kem_enc_derand_4 (ct, ss, pk, coins);
       break;
     }
+
+  if (coins == rnd)
+    wipememory (rnd, sizeof (rnd));
 }
 
 void
@@ -200,12 +206,6 @@ kyber_decap (int algo, uint8_t *ss, const uint8_t *ct, const uint8_t *sk)
     }
 }
 
-static void
-randombytes (uint8_t *out, size_t outlen)
-{
-  _gcry_randomize (out, outlen, GCRY_VERY_STRONG_RANDOM);
-}
-
 typedef struct {
   gcry_md_hd_t h;
 } keccak_state;
@@ -215,7 +215,7 @@ shake128_init (keccak_state *state)
 {
   gcry_err_code_t ec;
 
-  ec = _gcry_md_open (&state->h, GCRY_MD_SHAKE128, 0);
+  ec = _gcry_md_open_internal (&state->h, GCRY_MD_SHAKE128, 0, 0);
   if (ec)
     log_fatal ("internal md_open failed: %d\n", ec);
 }
@@ -289,8 +289,6 @@ sha3_512 (uint8_t h[64], const uint8_t *in, size_t inlen)
 #define cmov    ct_memmov_cond
 #else
 #include "kyber.h"
-
-void randombytes (uint8_t *out, size_t outlen);
 
 typedef struct {
   uint64_t s[25];
@@ -472,8 +470,6 @@ static void kyber_shake128_absorb (keccak_state *state,
 # define poly_getnoise_eta1 poly_getnoise_eta1_2
 # define crypto_kem_keypair_derand VARIANT2(crypto_kem_keypair_derand)
 # define crypto_kem_enc_derand VARIANT2(crypto_kem_enc_derand)
-# define crypto_kem_keypair VARIANT2(crypto_kem_keypair)
-# define crypto_kem_enc VARIANT2(crypto_kem_enc)
 # define crypto_kem_dec VARIANT2(crypto_kem_dec)
 # define polyvec VARIANT2(polyvec)
 # define polyvec_compress VARIANT2(polyvec_compress)
@@ -505,8 +501,6 @@ static void kyber_shake128_absorb (keccak_state *state,
 # define poly_getnoise_eta1 poly_getnoise_eta1_3_4
 # define crypto_kem_keypair_derand VARIANT3(crypto_kem_keypair_derand)
 # define crypto_kem_enc_derand VARIANT3(crypto_kem_enc_derand)
-# define crypto_kem_keypair VARIANT3(crypto_kem_keypair)
-# define crypto_kem_enc VARIANT3(crypto_kem_enc)
 # define crypto_kem_dec VARIANT3(crypto_kem_dec)
 # define polyvec VARIANT3(polyvec)
 # define polyvec_compress VARIANT3(polyvec_compress)
@@ -538,8 +532,6 @@ static void kyber_shake128_absorb (keccak_state *state,
 # define poly_getnoise_eta1 poly_getnoise_eta1_3_4
 # define crypto_kem_keypair_derand VARIANT4(crypto_kem_keypair_derand)
 # define crypto_kem_enc_derand VARIANT4(crypto_kem_enc_derand)
-# define crypto_kem_keypair VARIANT4(crypto_kem_keypair)
-# define crypto_kem_enc VARIANT4(crypto_kem_enc)
 # define crypto_kem_dec VARIANT4(crypto_kem_dec)
 # define polyvec VARIANT4(polyvec)
 # define polyvec_compress VARIANT4(polyvec_compress)

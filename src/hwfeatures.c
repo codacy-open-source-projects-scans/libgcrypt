@@ -84,6 +84,9 @@ static struct
     { HWF_INTEL_VAES_VPCLMUL,  "intel-vaes-vpclmul" },
     { HWF_INTEL_AVX512,        "intel-avx512" },
     { HWF_INTEL_GFNI,          "intel-gfni" },
+    { HWF_INTEL_SHA512,        "intel-sha512" },
+    { HWF_INTEL_SM3,           "intel-sm3" },
+    { HWF_INTEL_SM4,           "intel-sm4" },
     /* Following removed HW feature strings are kept for API compatibility. */
     { 0,                       "intel-fast-vpgather" },
 #elif defined(HAVE_CPU_ARCH_ARM)
@@ -324,7 +327,13 @@ _gcry_get_sysconfdir (void)
       void *handle;
       char *buf;
 
-      handle = LoadLibraryEx ("shell32.dll", NULL, 0);
+      /* See comment in random/rndw32.c */
+      if (GetProcAddress (GetModuleHandle ("kernel32.dll"),
+                          "SetDefaultDllDirectories"))
+        handle = LoadLibraryEx ("shell32.dll", NULL,
+                                LOAD_LIBRARY_SEARCH_SYSTEM32);
+      else
+        handle = LoadLibraryEx ("shell32.dll", NULL, 0);
       if (handle)
         {
           buf = xmalloc (MAX_PATH+17+1); /* Space for "/GNU/etc/gcrypt/" */
@@ -336,7 +345,7 @@ _gcry_get_sysconfdir (void)
               strcat (appdata, "/GNU/etc/gcrypt/");
             }
           xfree (buf);
-          CloseHandle (handle);
+          FreeLibrary (handle);
         }
       if (!appdata)
         appdata = xstrdup ("c:/ProgramData/GNU/etc/gcrypt/");

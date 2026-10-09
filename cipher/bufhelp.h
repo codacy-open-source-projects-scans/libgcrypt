@@ -126,58 +126,169 @@ typedef struct bufhelp_u32_s
   u32 a;
 } __attribute__((packed, aligned(1), may_alias)) bufhelp_u32_t;
 
-/* Functions for loading and storing unaligned u32 values of different
-   endianness.  */
-static inline u32 buf_get_be32(const void *_buf)
+typedef struct bufhelp_u32_aligned_s
 {
-  return be_bswap32(((const bufhelp_u32_t *)_buf)->a);
-}
-
-static inline u32 buf_get_le32(const void *_buf)
-{
-  return le_bswap32(((const bufhelp_u32_t *)_buf)->a);
-}
-
-static inline void buf_put_be32(void *_buf, u32 val)
-{
-  bufhelp_u32_t *out = _buf;
-  out->a = be_bswap32(val);
-}
-
-static inline void buf_put_le32(void *_buf, u32 val)
-{
-  bufhelp_u32_t *out = _buf;
-  out->a = le_bswap32(val);
-}
-
+  u32 a;
+} __attribute__(( aligned(4), may_alias)) bufhelp_u32_aligned_t;
 
 typedef struct bufhelp_u64_s
 {
   u64 a;
 } __attribute__((packed, aligned(1), may_alias)) bufhelp_u64_t;
 
+typedef struct bufhelp_u64_aligned_s
+{
+  u64 a;
+} __attribute__((aligned(8), may_alias)) bufhelp_u64_aligned_t;
+
+#if defined(__riscv) && \
+    (defined(__riscv_zicclsm) && (__riscv_zicclsm >= 1000000)) && \
+    defined(HAVE_GCC_INLINE_ASM_RISCV)
+
+/* Functions for loading and storing potentially unaligned u64/u32 values on
+   RISC-V with Zicclsm extension.  */
+static inline u32 buf_load32_maybe_unaligned(const void *buf)
+{
+  u64 val;
+  asm ("lw %0, %1"
+       : "=r" (val)
+       : "m" (*((const bufhelp_u32_t *)buf)));
+  return val;
+}
+
+static inline void buf_store32_maybe_unaligned(void *buf, u32 val)
+{
+  asm ("sw %1, %0"
+       : "=m" (*((bufhelp_u32_t *)buf))
+       : "r" (val));
+}
+
+static inline u64 buf_load64_maybe_unaligned(const void *buf)
+{
+  u64 val;
+  asm ("ld %0, %1"
+       : "=r" (val)
+       : "m" (*((const bufhelp_u64_t *)buf)));
+  return val;
+}
+
+static inline void buf_store64_maybe_unaligned(void *buf, u64 val)
+{
+  asm ("sd %1, %0"
+       : "=m" (*((bufhelp_u64_t *)buf))
+       : "r" (val));
+}
+
+#else
+
+/* Functions for loading and storing potentially unaligned u64/u32 values.  */
+static inline u32 buf_load32_maybe_unaligned(const void *buf)
+{
+  return ((const bufhelp_u32_t *)buf)->a;
+}
+
+static inline void buf_store32_maybe_unaligned(void *buf, u32 val)
+{
+  bufhelp_u32_t *out = buf;
+  out->a = val;
+}
+
+static inline u64 buf_load64_maybe_unaligned(const void *buf)
+{
+  return ((const bufhelp_u64_t *)buf)->a;
+}
+
+static inline void buf_store64_maybe_unaligned(void *buf, u64 val)
+{
+  bufhelp_u64_t *out = buf;
+  out->a = val;
+}
+
+#endif
+
+
+/* Functions for loading and storing u64/u32 values, with aligned path
+   when pointer alignment can be detected at compile time.  */
+static inline u32 buf_load32(const void *buf)
+{
+  /* Check if pointer alignment is known at compile time. */
+  if (CONSTANT_P(((uintptr_t)buf & 3) == 0) && ((uintptr_t)buf & 3) == 0)
+    return ((const bufhelp_u32_aligned_t *)buf)->a;
+  else
+    return buf_load32_maybe_unaligned(buf);
+}
+
+static inline void buf_store32(void *buf, u32 val)
+{
+  /* Check if pointer alignment is known at compile time. */
+  if (CONSTANT_P(((uintptr_t)buf & 3) == 0) && ((uintptr_t)buf & 3) == 0)
+    ((bufhelp_u32_aligned_t *)buf)->a = val;
+  else
+    buf_store32_maybe_unaligned(buf, val);
+}
+
+static inline u64 buf_load64(const void *buf)
+{
+  /* Check if pointer alignment is known at compile time. */
+  if (CONSTANT_P(((uintptr_t)buf & 7) == 0) && ((uintptr_t)buf & 7) == 0)
+    return ((const bufhelp_u64_aligned_t *)buf)->a;
+  else
+    return buf_load64_maybe_unaligned(buf);
+}
+
+static inline void buf_store64(void *buf, u64 val)
+{
+  /* Check if pointer alignment is known at compile time. */
+  if (CONSTANT_P(((uintptr_t)buf & 7) == 0) && ((uintptr_t)buf & 7) == 0)
+    ((bufhelp_u64_aligned_t *)buf)->a = val;
+  else
+    buf_store64_maybe_unaligned(buf, val);
+}
+
+
+/* Functions for loading and storing unaligned u32 values of different
+   endianness.  */
+static inline u32 buf_get_be32(const void *_buf)
+{
+  return be_bswap32(buf_load32(_buf));
+}
+
+static inline u32 buf_get_le32(const void *_buf)
+{
+  return le_bswap32(buf_load32(_buf));
+}
+
+static inline void buf_put_be32(void *_buf, u32 val)
+{
+  buf_store32(_buf, be_bswap32(val));
+}
+
+static inline void buf_put_le32(void *_buf, u32 val)
+{
+  buf_store32(_buf, le_bswap32(val));
+}
+
+
 /* Functions for loading and storing unaligned u64 values of different
    endianness.  */
 static inline u64 buf_get_be64(const void *_buf)
 {
-  return be_bswap64(((const bufhelp_u64_t *)_buf)->a);
+  return be_bswap64(buf_load64(_buf));
 }
 
 static inline u64 buf_get_le64(const void *_buf)
 {
-  return le_bswap64(((const bufhelp_u64_t *)_buf)->a);
+  return le_bswap64(buf_load64(_buf));
 }
 
 static inline void buf_put_be64(void *_buf, u64 val)
 {
-  bufhelp_u64_t *out = _buf;
-  out->a = be_bswap64(val);
+  buf_store64(_buf, be_bswap64(val));
 }
 
 static inline void buf_put_le64(void *_buf, u64 val)
 {
-  bufhelp_u64_t *out = _buf;
-  out->a = le_bswap64(val);
+  buf_store64(_buf, le_bswap64(val));
 }
 
 #endif /*BUFHELP_UNALIGNED_ACCESS*/

@@ -31,14 +31,16 @@
 
 #ifdef _WIN32
 # define SECTION_RODATA .section .rdata
+#elif defined(__APPLE__)
+# define SECTION_RODATA .section __TEXT,__const
 #else
 # define SECTION_RODATA .section .rodata
 #endif
 
 #ifdef __APPLE__
 #define GET_DATA_POINTER(reg, name) \
-	adrp    reg, name@GOTPAGE ; \
-	add     reg, reg, name@GOTPAGEOFF ;
+	adrp    reg, name@PAGE ; \
+	add     reg, reg, name@PAGEOFF ;
 #else
 #define GET_DATA_POINTER(reg, name) \
 	adrp    reg, name ; \
@@ -61,10 +63,13 @@
 # define AARCH64_PAC_PROPERTY_FLAG 0 /* No PAC */
 #endif
 
+/* straight-line speculation mitigation */
+#define SPEC_STOP dsb sy; isb
+
 #ifdef HAVE_GCC_ASM_CFI_DIRECTIVES
 /* CFI directives to emit DWARF stack unwinding information. */
 # define CFI_STARTPROC()            .cfi_startproc; AARCH64_HINT_BTI_C
-# define CFI_ENDPROC()              .cfi_endproc
+# define CFI_ENDPROC()              SPEC_STOP; .cfi_endproc
 # define CFI_REMEMBER_STATE()       .cfi_remember_state
 # define CFI_RESTORE_STATE()        .cfi_restore_state
 # define CFI_ADJUST_CFA_OFFSET(off) .cfi_adjust_cfa_offset off
@@ -106,7 +111,7 @@
 
 #else
 # define CFI_STARTPROC() AARCH64_HINT_BTI_C
-# define CFI_ENDPROC()
+# define CFI_ENDPROC() SPEC_STOP
 # define CFI_REMEMBER_STATE()
 # define CFI_RESTORE_STATE()
 # define CFI_ADJUST_CFA_OFFSET(off)
@@ -121,9 +126,9 @@
 
 /* 'ret' instruction replacement for straight-line speculation mitigation */
 #define ret_spec_stop \
-	ret; dsb sy; isb;
+	ret; SPEC_STOP;
 
-#define CLEAR_REG(reg) movi reg.16b, #0;
+#define CLEAR_REG(reg, ...) movi reg.16b, #0;
 
 #define CLEAR_ALL_REGS() \
 	CLEAR_REG(v0); CLEAR_REG(v1); CLEAR_REG(v2); CLEAR_REG(v3); \

@@ -34,6 +34,7 @@
 #endif
 
 #include "sntrup761.h"
+#include "bithelp.h"
 #include "const-time.h"
 
 /* from supercop-20201130/crypto_sort/int32/portable4/int32_minmax.inc */
@@ -208,36 +209,6 @@ uint32_mod_uint14 (uint32_t x, uint16_t m)
   return r;
 }
 
-/* from supercop-20201130/crypto_kem/sntrup761/ref/int32.c */
-
-static void
-int32_divmod_uint14 (int32_t * q, uint16_t * r, int32_t x, uint16_t m)
-{
-  uint32_t uq, uq2;
-  uint16_t ur, ur2;
-  uint32_t mask;
-
-  uint32_divmod_uint14 (&uq, &ur, 0x80000000 + (uint32_t) x, m);
-  uint32_divmod_uint14 (&uq2, &ur2, 0x80000000, m);
-  ur -= ur2;
-  uq -= uq2;
-  mask = ct_ulong_gen_mask(ur >> 15);
-  ur += mask & m;
-  uq += mask;
-  *r = ur;
-  *q = uq;
-}
-
-
-static uint16_t
-int32_mod_uint14 (int32_t x, uint16_t m)
-{
-  int32_t q;
-  uint16_t r;
-  int32_divmod_uint14 (&q, &r, x, m);
-  return r;
-}
-
 /* from supercop-20201130/crypto_kem/sntrup761/ref/paramsmenu.h */
 #define p 761
 #define q 4591
@@ -402,7 +373,16 @@ typedef int8_t small;
 static small
 F3_freeze (int16_t x)
 {
-  return int32_mod_uint14 (x + 1, 3) - 1;
+  /* Bias by multiple of three so that reduction is done on non-negative
+     value.  Multiply-shift quotient is exact for values below 2^17. */
+  static const u32 max_s16 = 0x7fff;
+  static const u32 max_s16_round_up_3 = (max_s16 + (3 - 1)) / 3 * 3;
+  static const u32 mod3_shift = 17;
+  static const u32 mod3_mul = (1U << mod3_shift) / 3 + 1;
+  u32 biased = x + 1 + max_s16_round_up_3;
+  u32 quot = (biased * mod3_mul) >> mod3_shift;
+
+  return (small)(biased - quot * 3) - 1;
 }
 
 /* ----- arithmetic mod q */
@@ -416,7 +396,17 @@ typedef int16_t Fq;
 static Fq
 Fq_freeze (int32_t x)
 {
-  return int32_mod_uint14 (x + q12, q) - q12;
+  /* Bias by multiple of q so that reduction is done on non-negative value.
+     Callers stay within +-2*q12*q12, where multiply-shift quotient is
+     exact. */
+  static const u32 max_fq = 2 * q12 * q12;
+  static const u32 max_fq_round_up_q = (max_fq + (q - 1)) / q * q;
+  static const u32 modq_shift = 36;
+  static const u32 modq_mul = (u32)(((u64)1 << modq_shift) / q + 1);
+  u32 biased = x + q12 + max_fq_round_up_q;
+  u32 quot = (u32)(((u64)biased * modq_mul) >> modq_shift);
+
+  return (Fq)(biased - quot * q) - q12;
 }
 
 static Fq
@@ -461,22 +451,24 @@ static void
 R3_mult (small * h, const small * f, const small * g)
 {
   small fg[p + p - 1];
-  small result;
+  int32_t result;
   int i, j;
 
+  /* Terms are in {-1,0,1} and there are at most p of them, so the
+     accumulator cannot overflow and needs reduction only once. */
   for (i = 0; i < p; ++i)
     {
       result = 0;
       for (j = 0; j <= i; ++j)
-	result = F3_freeze (result + f[j] * g[i - j]);
-      fg[i] = result;
+	result += f[j] * g[i - j];
+      fg[i] = F3_freeze (result);
     }
   for (i = p; i < p + p - 1; ++i)
     {
       result = 0;
       for (j = i - p + 1; j < p; ++j)
-	result = F3_freeze (result + f[j] * g[i - j]);
-      fg[i] = result;
+	result += f[j] * g[i - j];
+      fg[i] = F3_freeze (result);
     }
 
   for (i = p + p - 2; i >= p; --i)
@@ -557,22 +549,24 @@ static void
 Rq_mult_small (Fq * h, const Fq * f, const small * g)
 {
   Fq fg[p + p - 1];
-  Fq result;
+  int32_t result;
   int i, j;
 
+  /* Products are bounded by q12 and there are at most p terms, so the
+     accumulator cannot overflow and needs reduction only once. */
   for (i = 0; i < p; ++i)
     {
       result = 0;
       for (j = 0; j <= i; ++j)
-	result = Fq_freeze (result + f[j] * (int32_t) g[i - j]);
-      fg[i] = result;
+	result += f[j] * (int32_t) g[i - j];
+      fg[i] = Fq_freeze (result);
     }
   for (i = p; i < p + p - 1; ++i)
     {
       result = 0;
       for (j = i - p + 1; j < p; ++j)
-	result = Fq_freeze (result + f[j] * (int32_t) g[i - j]);
-      fg[i] = result;
+	result += f[j] * (int32_t) g[i - j];
+      fg[i] = Fq_freeze (result);
     }
 
   for (i = p + p - 2; i >= p; --i)
@@ -709,38 +703,27 @@ Hash_prefix (unsigned char *out, int b, const unsigned char *in, int inlen)
 
 /* ----- higher-level randomness */
 
-static uint32_t
-urandom32 (void *random_ctx, sntrup761_random_func * random)
-{
-  unsigned char c[4];
-  uint32_t out[4];
-
-  random (random_ctx, 4, c);
-  out[0] = (uint32_t) c[0];
-  out[1] = ((uint32_t) c[1]) << 8;
-  out[2] = ((uint32_t) c[2]) << 16;
-  out[3] = ((uint32_t) c[3]) << 24;
-  return out[0] + out[1] + out[2] + out[3];
-}
-
 static void
 Short_random (small * out, void *random_ctx, sntrup761_random_func * random)
 {
   uint32_t L[p];
   int i;
 
+  random (random_ctx, sizeof (L), (uint8_t *)L);
   for (i = 0; i < p; ++i)
-    L[i] = urandom32 (random_ctx, random);
+    L[i] = le_bswap32 (L[i]);
   Short_fromlist (out, L);
 }
 
 static void
 Small_random (small * out, void *random_ctx, sntrup761_random_func * random)
 {
+  uint32_t L[p];
   int i;
 
+  random (random_ctx, sizeof (L), (uint8_t *)L);
   for (i = 0; i < p; ++i)
-    out[i] = (((urandom32 (random_ctx, random) & 0x3fffffff) * 3) >> 30) - 1;
+    out[i] = (((le_bswap32 (L[i]) & 0x3fffffff) * 3) >> 30) - 1;
 }
 
 /* ----- Streamlined NTRU Prime Core */

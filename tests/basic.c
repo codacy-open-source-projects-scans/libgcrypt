@@ -246,7 +246,7 @@ progress_handler (void *cb_data, const char *what, int printchar,
      defined(HAVE_COMPATIBLE_GCC_WIN64_PLATFORM_AS)) && \
     defined(__SSE2__)
 # define CLUTTER_VECTOR_REGISTER_AMD64 1
-# define CLUTTER_VECTOR_REGISTER_COUNT 16
+# define CLUTTER_VECTOR_REGISTER_COUNT 32
 #elif defined(__i386__) && SIZEOF_UNSIGNED_LONG == 4 && __GNUC__ >= 4 && \
       defined(HAVE_GCC_INLINE_ASM_SSSE3) && defined(__SSE2__)
 # define CLUTTER_VECTOR_REGISTER_I386 1
@@ -261,6 +261,15 @@ progress_handler (void *cb_data, const char *what, int printchar,
       defined(__ARM_NEON)
 # define CLUTTER_VECTOR_REGISTER_NEON 1
 # define CLUTTER_VECTOR_REGISTER_COUNT 16
+#elif defined(HAVE_GCC_INLINE_ASM_RISCV_V) && \
+      defined(__riscv)
+# define CLUTTER_VECTOR_REGISTER_RISCV 1
+# undef CLUTTER_VECTOR_REGISTER_COUNT
+#elif defined(HAVE_COMPATIBLE_CC_PPC_ALTIVEC) && \
+      defined(HAVE_GCC_INLINE_ASM_PPC_ALTIVEC) && \
+      defined(__POWER8_VECTOR__)
+# define CLUTTER_VECTOR_REGISTER_PPC 1
+# define CLUTTER_VECTOR_REGISTER_COUNT 64
 #endif
 
 
@@ -295,87 +304,216 @@ static inline ALWAYS_INLINE void
 clutter_vector_registers(void)
 {
 #ifdef CLUTTER_VECTOR_REGISTER_COUNT
-  unsigned char data[CLUTTER_VECTOR_REGISTER_COUNT][16];
+  static unsigned char data[CLUTTER_VECTOR_REGISTER_COUNT][16];
+  static int data_init;
+#endif
+#if defined(CLUTTER_VECTOR_REGISTER_AMD64) || \
+    defined(CLUTTER_VECTOR_REGISTER_I386)
+  static int have_ymm;
+  static int have_zmm;
+#endif
+  static int have_vectors;
+  static struct
+  {
+    const char *match;
+    int *out_have;
+    int required;
+    int have;
+  } hwfeatures[] =
+    {
 #if defined(CLUTTER_VECTOR_REGISTER_AARCH64) || \
     defined(CLUTTER_VECTOR_REGISTER_NEON)
-  static int init;
-  static int have_neon;
+      { "arm-neon:",      &have_vectors, 1, 0 },
+#elif defined(CLUTTER_VECTOR_REGISTER_AMD64) || \
+      defined(CLUTTER_VECTOR_REGISTER_I386)
+      { "intel-ssse3:",   &have_vectors, 1, 0 },
+      { "intel-avx:",     &have_ymm, 0, 0 },
+      { "intel-avx512:",  &have_zmm, 0, 0 },
+#elif defined(CLUTTER_VECTOR_REGISTER_RISCV)
+      { "riscv-v:",       &have_vectors, 1, 0 },
+#elif defined(CLUTTER_VECTOR_REGISTER_PPC)
+      { "ppc-arch_2_07:", &have_vectors, 1, 0 },
+#endif
+    };
+  static int hwf_init = ((int)DIM(hwfeatures) == 0);
 
-  if (!init)
+  if (!hwf_init)
     {
-      char *string;
-
-      string = gcry_get_config (0, "hwflist");
-      if (string)
+      char *hwflist = gcry_get_config (0, "hwflist");
+      if (hwflist)
 	{
-	  have_neon = (strstr(string, "arm-neon:") != NULL);
-	  xfree(string);
+	  int i;
+
+	  for (i = 0; i < (int)DIM(hwfeatures); i++)
+	    {
+	      int have = (strstr(hwflist, hwfeatures[i].match) != NULL);
+	      hwfeatures[i].have = have;
+	      *hwfeatures[i].out_have |= have;
+	    }
+
+	  xfree(hwflist);
 	}
-      init = 1;
+
+      hwf_init = 1;
     }
 
-  if (!have_neon)
+  if (!have_vectors)
     return;
-#elif defined(CLUTTER_VECTOR_REGISTER_I386)
-  static int init;
-  static int have_ssse3;
 
-  if (!init)
+#ifdef CLUTTER_VECTOR_REGISTER_COUNT
+  if (!data_init)
     {
-      char *string;
-
-      string = gcry_get_config (0, "hwflist");
-      if (string)
-	{
-	  have_ssse3 = (strstr(string, "intel-ssse3:") != NULL);
-	  xfree(string);
-	}
-      init = 1;
+      prepare_vector_data(data);
+      data_init = 1;
     }
-
-  if (!have_ssse3)
-    return;
 #endif
 
-  prepare_vector_data(data);
-
 #if defined(CLUTTER_VECTOR_REGISTER_AMD64)
-  asm volatile("movdqu (0 * 16)(%[data]), %%xmm0\n"
-	       "movdqu (1 * 16)(%[data]), %%xmm1\n"
-	       "movdqu (2 * 16)(%[data]), %%xmm2\n"
-	       "movdqu (3 * 16)(%[data]), %%xmm3\n"
-	       "movdqu (4 * 16)(%[data]), %%xmm4\n"
-	       "movdqu (5 * 16)(%[data]), %%xmm5\n"
-	       "movdqu (6 * 16)(%[data]), %%xmm6\n"
-	       "movdqu (7 * 16)(%[data]), %%xmm7\n"
-	       "movdqu (8 * 16)(%[data]), %%xmm8\n"
-	       "movdqu (9 * 16)(%[data]), %%xmm9\n"
-	       "movdqu (10 * 16)(%[data]), %%xmm10\n"
-	       "movdqu (11 * 16)(%[data]), %%xmm11\n"
-	       "movdqu (12 * 16)(%[data]), %%xmm12\n"
-	       "movdqu (13 * 16)(%[data]), %%xmm13\n"
-	       "movdqu (14 * 16)(%[data]), %%xmm14\n"
-	       "movdqu (15 * 16)(%[data]), %%xmm15\n"
-	      :
-	      : [data] "r" (&data[0])
-	      : "memory", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5",
-	        "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12",
-	        "xmm13", "xmm14", "xmm15"
-	      );
+  if (0)
+    { }
+# ifdef HAVE_GCC_INLINE_ASM_AVX512
+  else if (have_zmm)
+    asm volatile("vbroadcasti32x4 (0 * 16)(%[data]), %%zmm0\n"
+		 "vbroadcasti32x4 (1 * 16)(%[data]), %%zmm1\n"
+		 "vbroadcasti32x4 (2 * 16)(%[data]), %%zmm2\n"
+		 "vbroadcasti32x4 (3 * 16)(%[data]), %%zmm3\n"
+		 "vbroadcasti32x4 (4 * 16)(%[data]), %%zmm4\n"
+		 "vbroadcasti32x4 (5 * 16)(%[data]), %%zmm5\n"
+		 "vbroadcasti32x4 (6 * 16)(%[data]), %%zmm6\n"
+		 "vbroadcasti32x4 (7 * 16)(%[data]), %%zmm7\n"
+		 "vbroadcasti32x4 (8 * 16)(%[data]), %%zmm8\n"
+		 "vbroadcasti32x4 (9 * 16)(%[data]), %%zmm9\n"
+		 "vbroadcasti32x4 (10 * 16)(%[data]), %%zmm10\n"
+		 "vbroadcasti32x4 (11 * 16)(%[data]), %%zmm11\n"
+		 "vbroadcasti32x4 (12 * 16)(%[data]), %%zmm12\n"
+		 "vbroadcasti32x4 (13 * 16)(%[data]), %%zmm13\n"
+		 "vbroadcasti32x4 (14 * 16)(%[data]), %%zmm14\n"
+		 "vbroadcasti32x4 (15 * 16)(%[data]), %%zmm15\n"
+		 "vbroadcasti32x4 (16 * 16)(%[data]), %%zmm16\n"
+		 "vbroadcasti32x4 (17 * 16)(%[data]), %%zmm17\n"
+		 "vbroadcasti32x4 (18 * 16)(%[data]), %%zmm18\n"
+		 "vbroadcasti32x4 (19 * 16)(%[data]), %%zmm19\n"
+		 "vbroadcasti32x4 (20 * 16)(%[data]), %%zmm20\n"
+		 "vbroadcasti32x4 (21 * 16)(%[data]), %%zmm21\n"
+		 "vbroadcasti32x4 (22 * 16)(%[data]), %%zmm22\n"
+		 "vbroadcasti32x4 (23 * 16)(%[data]), %%zmm23\n"
+		 "vbroadcasti32x4 (24 * 16)(%[data]), %%zmm24\n"
+		 "vbroadcasti32x4 (25 * 16)(%[data]), %%zmm25\n"
+		 "vbroadcasti32x4 (26 * 16)(%[data]), %%zmm26\n"
+		 "vbroadcasti32x4 (27 * 16)(%[data]), %%zmm27\n"
+		 "vbroadcasti32x4 (28 * 16)(%[data]), %%zmm28\n"
+		 "vbroadcasti32x4 (29 * 16)(%[data]), %%zmm29\n"
+		 "vbroadcasti32x4 (30 * 16)(%[data]), %%zmm30\n"
+		 "vbroadcasti32x4 (31 * 16)(%[data]), %%zmm31\n"
+		 :
+		 : [data] "r" (&data[0])
+		 : "memory", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5",
+		   "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12",
+		   "xmm13", "xmm14", "xmm15"
+#  ifdef __AVX512F__
+		   , "xmm16", "xmm17", "xmm18", "xmm19", "xmm20", "xmm21",
+		   "xmm22", "xmm23", "xmm24", "xmm25", "xmm26", "xmm27",
+		   "xmm28", "xmm29", "xmm30", "xmm31"
+#  endif
+		 );
+# endif
+# ifdef HAVE_GCC_INLINE_ASM_AVX
+  else if (have_ymm)
+    asm volatile("vbroadcastf128 (0 * 16)(%[data]), %%ymm0\n"
+		 "vbroadcastf128 (1 * 16)(%[data]), %%ymm1\n"
+		 "vbroadcastf128 (2 * 16)(%[data]), %%ymm2\n"
+		 "vbroadcastf128 (3 * 16)(%[data]), %%ymm3\n"
+		 "vbroadcastf128 (4 * 16)(%[data]), %%ymm4\n"
+		 "vbroadcastf128 (5 * 16)(%[data]), %%ymm5\n"
+		 "vbroadcastf128 (6 * 16)(%[data]), %%ymm6\n"
+		 "vbroadcastf128 (7 * 16)(%[data]), %%ymm7\n"
+		 "vbroadcastf128 (8 * 16)(%[data]), %%ymm8\n"
+		 "vbroadcastf128 (9 * 16)(%[data]), %%ymm9\n"
+		 "vbroadcastf128 (10 * 16)(%[data]), %%ymm10\n"
+		 "vbroadcastf128 (11 * 16)(%[data]), %%ymm11\n"
+		 "vbroadcastf128 (12 * 16)(%[data]), %%ymm12\n"
+		 "vbroadcastf128 (13 * 16)(%[data]), %%ymm13\n"
+		 "vbroadcastf128 (14 * 16)(%[data]), %%ymm14\n"
+		 "vbroadcastf128 (15 * 16)(%[data]), %%ymm15\n"
+		 :
+		 : [data] "r" (&data[0])
+		 : "memory", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5",
+		   "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12",
+		   "xmm13", "xmm14", "xmm15"
+		 );
+# endif
+  else
+    asm volatile("movdqu (0 * 16)(%[data]), %%xmm0\n"
+		 "movdqu (1 * 16)(%[data]), %%xmm1\n"
+		 "movdqu (2 * 16)(%[data]), %%xmm2\n"
+		 "movdqu (3 * 16)(%[data]), %%xmm3\n"
+		 "movdqu (4 * 16)(%[data]), %%xmm4\n"
+		 "movdqu (5 * 16)(%[data]), %%xmm5\n"
+		 "movdqu (6 * 16)(%[data]), %%xmm6\n"
+		 "movdqu (7 * 16)(%[data]), %%xmm7\n"
+		 "movdqu (8 * 16)(%[data]), %%xmm8\n"
+		 "movdqu (9 * 16)(%[data]), %%xmm9\n"
+		 "movdqu (10 * 16)(%[data]), %%xmm10\n"
+		 "movdqu (11 * 16)(%[data]), %%xmm11\n"
+		 "movdqu (12 * 16)(%[data]), %%xmm12\n"
+		 "movdqu (13 * 16)(%[data]), %%xmm13\n"
+		 "movdqu (14 * 16)(%[data]), %%xmm14\n"
+		 "movdqu (15 * 16)(%[data]), %%xmm15\n"
+		 :
+		 : [data] "r" (&data[0])
+		 : "memory", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5",
+		   "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12",
+		   "xmm13", "xmm14", "xmm15"
+		 );
 #elif defined(CLUTTER_VECTOR_REGISTER_I386)
-  asm volatile("movdqu (0 * 16)(%[data]), %%xmm0\n"
-	       "movdqu (1 * 16)(%[data]), %%xmm1\n"
-	       "movdqu (2 * 16)(%[data]), %%xmm2\n"
-	       "movdqu (3 * 16)(%[data]), %%xmm3\n"
-	       "movdqu (4 * 16)(%[data]), %%xmm4\n"
-	       "movdqu (5 * 16)(%[data]), %%xmm5\n"
-	       "movdqu (6 * 16)(%[data]), %%xmm6\n"
-	       "movdqu (7 * 16)(%[data]), %%xmm7\n"
-	      :
-	      : [data] "r" (&data[0])
-	      : "memory", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5",
-	        "xmm6", "xmm7"
-	      );
+  if (0)
+    { }
+# ifdef HAVE_GCC_INLINE_ASM_AVX512
+  else if (have_zmm)
+    asm volatile("vbroadcasti32x4 (0 * 16)(%[data]), %%zmm0\n"
+		 "vbroadcasti32x4 (1 * 16)(%[data]), %%zmm1\n"
+		 "vbroadcasti32x4 (2 * 16)(%[data]), %%zmm2\n"
+		 "vbroadcasti32x4 (3 * 16)(%[data]), %%zmm3\n"
+		 "vbroadcasti32x4 (4 * 16)(%[data]), %%zmm4\n"
+		 "vbroadcasti32x4 (5 * 16)(%[data]), %%zmm5\n"
+		 "vbroadcasti32x4 (6 * 16)(%[data]), %%zmm6\n"
+		 "vbroadcasti32x4 (7 * 16)(%[data]), %%zmm7\n"
+		 :
+		 : [data] "r" (&data[0])
+		 : "memory", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5",
+		   "xmm6", "xmm7"
+		);
+# endif
+# ifdef HAVE_GCC_INLINE_ASM_AVX
+  else if (have_ymm)
+    asm volatile("vbroadcastf128 (0 * 16)(%[data]), %%ymm0\n"
+		 "vbroadcastf128 (1 * 16)(%[data]), %%ymm1\n"
+		 "vbroadcastf128 (2 * 16)(%[data]), %%ymm2\n"
+		 "vbroadcastf128 (3 * 16)(%[data]), %%ymm3\n"
+		 "vbroadcastf128 (4 * 16)(%[data]), %%ymm4\n"
+		 "vbroadcastf128 (5 * 16)(%[data]), %%ymm5\n"
+		 "vbroadcastf128 (6 * 16)(%[data]), %%ymm6\n"
+		 "vbroadcastf128 (7 * 16)(%[data]), %%ymm7\n"
+		 :
+		 : [data] "r" (&data[0])
+		 : "memory", "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5",
+		   "ymm6", "ymm7"
+		);
+# endif
+  else
+    asm volatile("movdqu (0 * 16)(%[data]), %%xmm0\n"
+		 "movdqu (1 * 16)(%[data]), %%xmm1\n"
+		 "movdqu (2 * 16)(%[data]), %%xmm2\n"
+		 "movdqu (3 * 16)(%[data]), %%xmm3\n"
+		 "movdqu (4 * 16)(%[data]), %%xmm4\n"
+		 "movdqu (5 * 16)(%[data]), %%xmm5\n"
+		 "movdqu (6 * 16)(%[data]), %%xmm6\n"
+		 "movdqu (7 * 16)(%[data]), %%xmm7\n"
+		 :
+		 : [data] "r" (&data[0])
+		 : "memory", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5",
+		   "xmm6", "xmm7"
+		);
 #elif defined(CLUTTER_VECTOR_REGISTER_AARCH64)
   asm volatile("mov x0, %[ptr]\n"
 	       "ld1 {v0.16b}, [x0], #16\n"
@@ -440,9 +578,84 @@ clutter_vector_registers(void)
 	       : "r0", "q0", "q1", "q2", "q3", "q4", "q5", "q6", "q7",
 	         "q8", "q9", "q10", "q11", "q12", "q13", "q14", "q15",
 	         "memory");
+#elif defined(CLUTTER_VECTOR_REGISTER_RISCV)
+  asm volatile(".option push;\n"
+	       ".option arch, +v;\n"
+	       "vsetvli t0, %0, e8, m4, ta, ma;\n"
+	       "vid.v v0;\n"
+	       "vid.v v4;\n"
+	       "vid.v v8;\n"
+	       "vid.v v12;\n"
+	       "vid.v v16;\n"
+	       "vid.v v20;\n"
+	       "vid.v v24;\n"
+	       "vid.v v28;\n"
+	       "vadd.vx v4, v4, t0;\n"
+	       "add t1, t0, t0;\n"
+	       "vadd.vx v8, v8, t1;\n"
+	       "add t1, t1, t0;\n"
+	       "vadd.vx v12, v12, t1;\n"
+	       "add t1, t1, t0;\n"
+	       "vadd.vx v16, v16, t1;\n"
+	       "add t1, t1, t0;\n"
+	       "vadd.vx v20, v20, t1;\n"
+	       "add t1, t1, t0;\n"
+	       "add t0, t1, t0;\n"
+	       "vadd.vx v24, v24, t1;\n"
+	       "vadd.vx v28, v28, t0;\n"
+	       ".option pop;\n"
+	       :
+	       : "r" (~0)
+	       : "memory", "vl", "vtype", "t0", "t1",
+		 "v0", "v1", "v2", "v3",
+		 "v4", "v5", "v6", "v7",
+		 "v8", "v9", "v10", "v11",
+		 "v12", "v13", "v14", "v15",
+		 "v16", "v17", "v18", "v19",
+		 "v20", "v21", "v22", "v23",
+		 "v24", "v25", "v26", "v27",
+		 "v28", "v29", "v30", "v31");
+#elif defined(CLUTTER_VECTOR_REGISTER_PPC)
+  #define FILL_VECS_10(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9) \
+	asm volatile("lxvd2x "#v0", %y0\n" \
+		     "lxvd2x "#v1", %y1\n" \
+		     "lxvd2x "#v2", %y2\n" \
+		     "lxvd2x "#v3", %y3\n" \
+		     "lxvd2x "#v4", %y4\n" \
+		     "lxvd2x "#v5", %y5\n" \
+		     "lxvd2x "#v6", %y6\n" \
+		     "lxvd2x "#v7", %y7\n" \
+		     "lxvd2x "#v8", %y8\n" \
+		     "lxvd2x "#v9", %y9\n" \
+		     : \
+		     : "Z" (data[v0][0]), "Z" (data[v1][0]), \
+		       "Z" (data[v2][0]), "Z" (data[v3][0]), \
+		       "Z" (data[v4][0]), "Z" (data[v5][0]), \
+		       "Z" (data[v6][0]), "Z" (data[v7][0]), \
+		       "Z" (data[v8][0]), "Z" (data[v9][0]) \
+		     : "vs" #v0, "vs" #v1, "vs" #v2, "vs" #v3, \
+		       "vs" #v4, "vs" #v5, "vs" #v6, "vs" #v7, \
+		       "vs" #v8, "vs" #v9, "memory");
+  #define FILL_VECS_4(v0, v1, v2, v3) \
+	asm volatile("lxvd2x "#v0", %y0\n" \
+		     "lxvd2x "#v1", %y1\n" \
+		     "lxvd2x "#v2", %y2\n" \
+		     "lxvd2x "#v3", %y3\n" \
+		     : \
+		     : "Z" (data[v0][0]), "Z" (data[v1][0]), \
+		       "Z" (data[v2][0]), "Z" (data[v3][0]) \
+		     : "vs" #v0, "vs" #v1, "vs" #v2, "vs" #v3, \
+		       "memory");
+  FILL_VECS_10(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+  FILL_VECS_10(10, 11, 12, 13, 14, 15, 16, 17, 18, 19);
+  FILL_VECS_10(20, 21, 22, 23, 24, 25, 26, 27, 28, 29);
+  FILL_VECS_10(30, 31, 32, 33, 34, 35, 36, 37, 38, 39);
+  FILL_VECS_10(40, 41, 42, 43, 44, 45, 46, 47, 48, 49);
+  FILL_VECS_10(50, 51, 52, 53, 54, 55, 56, 57, 58, 59);
+  FILL_VECS_4(60, 61, 62, 63);
+  #undef FILL_VECS_10
+  #undef FILL_VECS_4
 #endif
-
-#endif /* CLUTTER_VECTOR_REGISTER_COUNT */
 }
 
 
@@ -9475,6 +9688,65 @@ check_ocb_cipher_largebuf (int algo, int keylen, const char *tagexpect)
 
 
 static void
+ocb_aad_tag (const unsigned char key[16], const unsigned char nonce[12],
+             const unsigned char *aad, size_t len0, size_t len1,
+             unsigned char tag[16])
+{
+  gcry_cipher_hd_t hd;
+  gcry_error_t err;
+  unsigned char out[16];
+
+  err = gcry_cipher_open (&hd, GCRY_CIPHER_AES, GCRY_CIPHER_MODE_OCB, 0);
+  if (!err)
+    err = gcry_cipher_setkey (hd, key, 16);
+  if (!err)
+    err = gcry_cipher_setiv (hd, nonce, 12);
+  if (!err)
+    err = gcry_cipher_authenticate (hd, aad, len0);
+  if (!err && len1)
+    err = gcry_cipher_authenticate (hd, aad + len0, len1);
+  if (!err)
+    err = gcry_cipher_final (hd);
+  if (!err)
+    err = gcry_cipher_encrypt (hd, out, sizeof out, aad, sizeof out);
+  if (!err)
+    err = gcry_cipher_gettag (hd, tag, 16);
+  gcry_cipher_close (hd);
+  if (err)
+    fail ("ocb aad tablewrap: %s\n", gpg_strerror (err));
+}
+
+
+static void
+check_ocb_cipher_aad_tablewrap (void)
+{
+  static const unsigned char key[16] _GCRY_GCC_ATTR_NONSTRING =
+    "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f";
+  static const unsigned char nonce[12] _GCRY_GCC_ATTR_NONSTRING =
+    "\xbb\xaa\x99\x88\x77\x66\x55\x44\x33\x22\x11\x0d";
+  const size_t aadlen = (size_t)65536 * 16;   /* fills one OCB L-table wrap */
+  unsigned char tag_ref[16], tag_split[16];
+  unsigned char *aad;
+  size_t i;
+
+  if (verbose)
+    fprintf (stderr, "  checking OCB AAD split across L-table boundary\n");
+
+  aad = xmalloc (aadlen);
+  for (i = 0; i < aadlen; i++)
+    aad[i] = (unsigned char)i;
+
+  ocb_aad_tag (key, nonce, aad, aadlen, 0, tag_ref);
+  ocb_aad_tag (key, nonce, aad, aadlen - 15, 15, tag_split);
+
+  if (memcmp (tag_ref, tag_split, 16))
+    fail ("ocb aad tablewrap: split tag mismatch\n");
+
+  xfree (aad);
+}
+
+
+static void
 check_ocb_cipher_splitaad (void)
 {
   const char t_nonce[] = ("BBAA9988776655443322110D");
@@ -9766,6 +10038,7 @@ check_ocb_cipher (void)
 
   /* Check that the AAD data is correctly buffered.  */
   check_ocb_cipher_splitaad ();
+  check_ocb_cipher_aad_tablewrap ();
 }
 
 
@@ -12258,6 +12531,8 @@ check_one_cipher_ctr_reset (gcry_cipher_hd_t hd, int algo, int mode,
   else
     ivlen = 16;
 
+  assert (ivlen <= sizeof (iv));
+
   /* Little-endian fill. */
   for (i = 0; i < 4; i++)
     iv[i + 0] = (ctr_low_bits >> (i * 8)) & 0xff;
@@ -12606,6 +12881,10 @@ cipher_cbc_bulk_test (int cipher_algo)
       return -1;
     }
 
+  if (verbose)
+    fprintf (stderr, "    checking CBC bulk encryption for %s [%i]\n",
+             cipher, cipher_algo);
+
   memsize = (blocksize * 2) + (blocksize * nblocks * 3) + 16 + (blocksize + 1);
 
   mem = xcalloc (1, memsize);
@@ -12846,6 +13125,10 @@ cipher_cfb_bulk_test (int cipher_algo)
       return -1;
     }
 
+  if (verbose)
+    fprintf (stderr, "    checking CFB bulk encryption for %s [%i]\n",
+             cipher, cipher_algo);
+
   memsize = (blocksize * 2) + (blocksize * nblocks * 3) + 16 + (blocksize + 1);
 
   mem = xcalloc (1, memsize);
@@ -13074,6 +13357,10 @@ cipher_ctr_bulk_test (int cipher_algo)
       fail ("%s-CTR-%d test failed (key too short)", cipher, blocksize * 8);
       return -1;
     }
+
+  if (verbose)
+    fprintf (stderr, "    checking CTR bulk encryption for %s [%i]\n",
+             cipher, cipher_algo);
 
   memsize = (blocksize * 2) + (blocksize * nblocks * 4) + 16 + (blocksize + 1);
 
@@ -13380,6 +13667,132 @@ cipher_ctr_bulk_test (int cipher_algo)
 }
 
 
+/* Regression test for the 16-bit-overflow split in bulk CTR encryption: a
+   single call spanning >= 0x10000 blocks must not reuse keystream nor drop the
+   counter carry.  Reference keystream is built from ECB with a full-width
+   byte-wise counter, correct independent of the split logic. */
+static int
+cipher_ctr16_overflow_test (int cipher_algo)
+{
+  static const unsigned int low16_start[] =
+    { 0, 1, 0x7fff, 0x8000, 0xfffe, 0xffff };
+  const size_t nblocks = 2 * 0x10000 + 5;
+  int blocksize;
+  const char *cipher;
+  gcry_cipher_hd_t hd_ecb = NULL;
+  gcry_cipher_hd_t hd_ctr = NULL;
+  unsigned char *plaintext = NULL;
+  unsigned char *reftext = NULL;
+  unsigned char *enctext = NULL;
+  unsigned char iv[16];
+  unsigned char getctr[17];
+  size_t buflen, i, j, tc;
+  unsigned int keylen;
+  static const unsigned char key[32] = {
+      0x06,0x9A,0x00,0x7F,0xC7,0x6A,0x45,0x9F,
+      0x98,0xBA,0xF9,0x17,0xFE,0xDF,0x95,0x21,
+      0x06,0x9A,0x00,0x7F,0xC7,0x6A,0x45,0x9F,
+      0x98,0xBA,0xF9,0x17,0xFE,0xDF,0x95,0x21
+    };
+
+  if (gcry_cipher_test_algo (cipher_algo))
+    return 0;
+  blocksize = gcry_cipher_get_algo_blklen (cipher_algo);
+  if (blocksize < 8 || blocksize > 16)
+    return 0;
+  cipher = gcry_cipher_algo_name (cipher_algo);
+  keylen = gcry_cipher_get_algo_keylen (cipher_algo);
+  if (keylen > sizeof(key))
+    return 0;
+
+  if (verbose)
+    fprintf (stderr, "    checking CTR 16-bit overflow for %s [%i]\n",
+             cipher, cipher_algo);
+
+  buflen = nblocks * (size_t)blocksize;
+  plaintext = xmalloc (buflen);
+  reftext = xmalloc (buflen);
+  enctext = xmalloc (buflen);
+
+  if (gcry_cipher_open (&hd_ecb, cipher_algo, GCRY_CIPHER_MODE_ECB, 0)
+      || gcry_cipher_open (&hd_ctr, cipher_algo, GCRY_CIPHER_MODE_CTR, 0)
+      || gcry_cipher_setkey (hd_ecb, key, keylen)
+      || gcry_cipher_setkey (hd_ctr, key, keylen))
+    {
+      fail ("%s-CTR-%d ctr16 test failed (setup)", cipher, blocksize * 8);
+      goto leave;
+    }
+
+  for (i = 0; i < buflen; i++)
+    plaintext[i] = (unsigned char)i;
+
+  for (tc = 0; tc < DIM (low16_start); tc++)
+    {
+      unsigned int low16 = low16_start[tc];
+
+      /* Fixed non-zero upper bytes exercise carry past the low 16 bits. */
+      memset (iv, 0x5a, blocksize);
+      iv[blocksize - 3] = 0x40;
+      iv[blocksize - 2] = (low16 >> 8) & 0xff;
+      iv[blocksize - 1] = low16 & 0xff;
+
+      if (gcry_cipher_setctr (hd_ctr, iv, blocksize))
+        {
+          fail ("%s-CTR-%d ctr16 test failed (setctr, low16=0x%04x)",
+                cipher, blocksize * 8, low16);
+          goto leave;
+        }
+
+      /* iv ends holding start + nblocks, the reference final counter. */
+      for (i = 0; i < buflen; i += blocksize)
+        {
+          memcpy (&reftext[i], iv, blocksize);
+          for (j = blocksize; j > 0; j--)
+            if (++iv[j - 1])
+              break;
+        }
+      if (gcry_cipher_encrypt (hd_ecb, reftext, buflen, NULL, 0))
+        {
+          fail ("%s-CTR-%d ctr16 test failed (ecb, low16=0x%04x)",
+                cipher, blocksize * 8, low16);
+          goto leave;
+        }
+      for (i = 0; i < buflen; i++)
+        reftext[i] ^= plaintext[i];
+
+      if (gcry_cipher_encrypt (hd_ctr, enctext, buflen, plaintext, buflen))
+        {
+          fail ("%s-CTR-%d ctr16 test failed (ctr, low16=0x%04x)",
+                cipher, blocksize * 8, low16);
+          goto leave;
+        }
+      if (memcmp (enctext, reftext, buflen))
+        {
+          fail ("%s-CTR-%d ctr16 test failed (keystream, low16=0x%04x)",
+                cipher, blocksize * 8, low16);
+          goto leave;
+        }
+
+      if (gcry_cipher_ctl (hd_ctr, PRIV_CIPHERCTL_GET_COUNTER, getctr,
+                           blocksize + 1)
+          || getctr[0] != blocksize
+          || memcmp (getctr + 1, iv, blocksize))
+        {
+          fail ("%s-CTR-%d ctr16 test failed (counter, low16=0x%04x)",
+                cipher, blocksize * 8, low16);
+          goto leave;
+        }
+    }
+
+leave:
+  gcry_cipher_close (hd_ecb);
+  gcry_cipher_close (hd_ctr);
+  xfree (plaintext);
+  xfree (reftext);
+  xfree (enctext);
+  return 0;
+}
+
 
 static void
 check_ciphers (void)
@@ -13544,6 +13957,20 @@ check_ciphers (void)
 
 
 static void
+check_ctr16_overflow (void)
+{
+  /* One 128-bit and one 64-bit block cipher cover both blocksize code paths
+     in _gcry_cipher_ctr_encrypt_ctx. */
+  if (verbose)
+    fprintf (stderr, "  Starting CTR 16-bit overflow checks.\n");
+  cipher_ctr16_overflow_test (GCRY_CIPHER_AES);
+  cipher_ctr16_overflow_test (GCRY_CIPHER_BLOWFISH);
+  if (verbose)
+    fprintf (stderr, "  Completed CTR 16-bit overflow checks.\n");
+}
+
+
+static void
 check_cipher_modes(void)
 {
   if (verbose)
@@ -13553,6 +13980,8 @@ check_cipher_modes(void)
   check_aes128_cbc_cts_cipher ();
   check_cbc_mac_cipher ();
   check_ctr_cipher ();
+  check_ctr16_overflow ();
+
   check_cfb_cipher ();
   check_ofb_cipher ();
   check_ccm_cipher ();
@@ -15978,6 +16407,7 @@ check_one_mac (int algo, const char *data, int datalen,
 	       const char *key, int keylen, const char *iv, int ivlen,
 	       const char *expect, int test_buffering)
 {
+  unsigned char big_bad_tag[64 * 2];
   gcry_mac_hd_t hd;
   unsigned char *p;
   unsigned int maclen;
@@ -16131,6 +16561,14 @@ check_one_mac (int algo, const char *data, int datalen,
   if (err)
     fail("algo %d, mac gcry_mac_verify failed: %s\n", algo, gpg_strerror (err));
 
+  clutter_vector_registers();
+  err = gcry_mac_verify (hd, big_bad_tag, sizeof(big_bad_tag));
+  if (gcry_err_code (err) != GPG_ERR_INV_LENGTH)
+    fail ("algo %d, gcry_mac_verify: oversized len %d not rejected: %s\n", algo,
+	  (int)sizeof(big_bad_tag), gpg_strerror (err));
+  if (err)
+    goto out;
+
   macoutlen = maclen;
   clutter_vector_registers();
   err = gcry_mac_read (hd, p, &macoutlen);
@@ -16158,6 +16596,68 @@ out:
   free (p);
   gcry_mac_close (hd);
 }
+
+#if USE_GOST28147
+static void
+check_mac_gost_imit_verify_len (void)
+{
+  static const char key[32] _GCRY_GCC_ATTR_NONSTRING =
+    "\x9d\x05\xb7\x9e\x90\xca\xd0\x0a\x2c\xda\xd2\x2e\xf4\xe8\x6f\x5c"
+    "\xf5\xdc\x37\x68\x19\x85\xb3\xbf\xaa\x18\xc1\xc3\x05\x0a\x91\xa2";
+  static const char data[16] _GCRY_GCC_ATTR_NONSTRING =
+    "\xb5\xa1\xf0\xe3\xce\x2f\x02\x1d\x67\x61\x94\x34\x5c\x41\xe3\x6e";
+  static const size_t bad_lens[] = { 9, 16, 64, 4096 };
+  unsigned char tag[8];
+  unsigned char big[4096];
+  size_t taglen = sizeof (tag);
+  gcry_mac_hd_t hd;
+  gcry_error_t err;
+  unsigned int i;
+
+  if (gcry_mac_test_algo (GCRY_MAC_GOST28147_IMIT))
+    return;
+
+  if (verbose)
+    fprintf (stderr, "  checking GOST28147 IMIT verify length handling\n");
+
+  err = gcry_mac_open (&hd, GCRY_MAC_GOST28147_IMIT, 0, NULL);
+  if (err)
+    {
+      fail ("gost imit verify: gcry_mac_open failed: %s\n", gpg_strerror (err));
+      return;
+    }
+
+  if (!(err = gcry_mac_setkey (hd, key, sizeof (key))))
+    err = gcry_mac_write (hd, data, sizeof (data));
+  if (!err)
+    err = gcry_mac_read (hd, tag, &taglen);
+  if (err || taglen != sizeof (tag))
+    {
+      fail ("gost imit verify: setup failed: %s\n", gpg_strerror (err));
+      goto out;
+    }
+
+  err = gcry_mac_verify (hd, tag, sizeof (tag));
+  if (err)
+    fail ("gost imit verify: 8-byte tag rejected: %s\n", gpg_strerror (err));
+  err = gcry_mac_verify (hd, tag, 4);
+  if (err)
+    fail ("gost imit verify: 4-byte tag rejected: %s\n", gpg_strerror (err));
+
+  memset (big, 0, sizeof (big));
+  memcpy (big, tag, sizeof (tag));
+  for (i = 0; i < DIM (bad_lens); i++)
+    {
+      err = gcry_mac_verify (hd, big, bad_lens[i]);
+      if (gcry_err_code (err) != GPG_ERR_INV_LENGTH)
+        fail ("gost imit verify: oversized len %d not rejected: %s\n",
+              (int)bad_lens[i], gpg_strerror (err));
+    }
+
+out:
+  gcry_mac_close (hd);
+}
+#endif /* USE_GOST28147 */
 
 static void
 check_mac (void)
@@ -17109,6 +17609,10 @@ check_mac (void)
 		     algos[i].iv, algos[i].iv ? strlen(algos[i].iv) : 0,
 		     algos[i].expect, 1);
     }
+
+#if USE_GOST28147
+  check_mac_gost_imit_verify_len ();
+#endif
 
   if (verbose)
     fprintf (stderr, "Completed MAC checks.\n");

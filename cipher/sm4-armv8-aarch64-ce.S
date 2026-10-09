@@ -335,6 +335,7 @@ sm4_armv8_ce_crypt_blk1_4:
     st1 {v3.16b}, [x1];
 
 .Lblk4_store_output_done:
+    mov x0, #0;
     ret_spec_stop;
     CFI_ENDPROC();
 ELF(.size sm4_armv8_ce_crypt_blk1_4,.-sm4_armv8_ce_crypt_blk1_4;)
@@ -385,6 +386,7 @@ _gcry_sm4_armv8_ce_crypt_blk1_8:
 
 .Lblk8_store_output_done:
     CLEAR_ALL_REGS();
+    mov x0, #0;
     ret_spec_stop;
     CFI_ENDPROC();
 ELF(.size _gcry_sm4_armv8_ce_crypt_blk1_8,.-_gcry_sm4_armv8_ce_crypt_blk1_8;)
@@ -544,30 +546,30 @@ _gcry_sm4_armv8_ce_ctr_enc:
 
     load_rkey(x0);
 
-    ldp x7, x8, [x3];
-    rev x7, x7;
-    rev x8, x8;
+    ld1 {RIV.16b}, [x3];
+    rev16 RIV.16b, RIV.16b;
+
+    mov w7, #1;
+    movi RMASK.16b, #0;
+    mov RMASK.b[14], w7;
 
 .Lctr_loop_blk:
     subs x4, x4, #8;
     bmi .Lctr_end;
 
-#define inc_le128(vctr)       \
-    mov vctr.d[1], x8;        \
-    mov vctr.d[0], x7;        \
-    adds x8, x8, #1;          \
-    adc x7, x7, xzr;          \
-    rev64 vctr.16b, vctr.16b;
+#define inc_be16(vctr)            \
+    rev16 vctr.16b, RIV.16b;      \
+    add RIV.8h, RIV.8h, RMASK.8h;
 
     /* construct CTRs */
-    inc_le128(v0);      /* +0 */
-    inc_le128(v1);      /* +1 */
-    inc_le128(v2);      /* +2 */
-    inc_le128(v3);      /* +3 */
-    inc_le128(v4);      /* +4 */
-    inc_le128(v5);      /* +5 */
-    inc_le128(v6);      /* +6 */
-    inc_le128(v7);      /* +7 */
+    inc_be16(v0);      /* +0 */
+    inc_be16(v1);      /* +1 */
+    inc_be16(v2);      /* +2 */
+    inc_be16(v3);      /* +3 */
+    inc_be16(v4);      /* +4 */
+    inc_be16(v5);      /* +5 */
+    inc_be16(v6);      /* +6 */
+    inc_be16(v7);      /* +7 */
 
     crypt_blk8(v0, v1, v2, v3, v4, v5, v6, v7);
 
@@ -589,9 +591,8 @@ _gcry_sm4_armv8_ce_ctr_enc:
 
 .Lctr_end:
     /* store new CTR */
-    rev x7, x7;
-    rev x8, x8;
-    stp x7, x8, [x3];
+    rev16 RIV.16b, RIV.16b;
+    st1 {RIV.16b}, [x3];
 
     CLEAR_ALL_REGS();
     ret_spec_stop;

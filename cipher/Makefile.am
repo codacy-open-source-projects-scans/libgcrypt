@@ -29,7 +29,7 @@ AM_CCASFLAGS = $(NOEXECSTACK_FLAGS)
 EXTRA_DIST = gost-s-box.c kyber-common.c kyber-kdep.c \
              dilithium-common.c dilithium-dep.c
 
-CLEANFILES = gost-s-box$(EXEEXT_FOR_BUILD)
+CLEANFILES = gost-s-box$(EXEEXT_FOR_BUILD) *-darwin.s
 DISTCLEANFILES = gost-sb.h
 
 noinst_LTLIBRARIES = libcipher.la
@@ -137,6 +137,8 @@ EXTRA_libcipher_la_SOURCES = \
 	serpent-avx512-x86.c serpent-armv7-neon.S \
 	simd-common-aarch64.h simd-common-ppc.h simd-common-riscv.h \
 	sm4.c sm4-aesni-avx-amd64.S sm4-aesni-avx2-amd64.S \
+	sm4-avx2-amd64.h sm4-avx512-amd64.h \
+	sm4-intel-avx2-amd64.S sm4-intel-avx512-amd64.S \
 	sm4-gfni-avx2-amd64.S sm4-gfni-avx512-amd64.S \
 	sm4-aarch64.S sm4-armv8-aarch64-ce.S sm4-armv9-aarch64-sve-ce.S \
 	sm4-ppc.c \
@@ -149,9 +151,11 @@ EXTRA_libcipher_la_SOURCES = \
 	sha256-intel-shaext.c sha256-ppc.c sha256-riscv-zvknha-zvkb.c \
 	sha512.c sha512-ssse3-amd64.S sha512-avx-amd64.S \
 	sha512-avx2-bmi2-amd64.S sha512-avx512-amd64.S \
+	sha512-intel-shaext.c \
 	sha512-armv7-neon.S sha512-armv8-aarch64-ce.S sha512-arm.S \
 	sha512-ppc.c sha512-riscv-zvknhb-zvkb.c sha512-ssse3-i386.c \
-	sm3.c sm3-avx-bmi2-amd64.S sm3-aarch64.S sm3-armv8-aarch64-ce.S \
+	sm3.c sm3-avx-bmi2-amd64.S sm3-intel-avx2-amd64.S sm3-aarch64.S \
+	sm3-armv8-aarch64-ce.S \
 	keccak.c keccak_permute_32.h keccak_permute_64.h \
 	keccak-armv7-neon.S keccak-amd64-avx512.S \
 	stribog.c \
@@ -240,6 +244,12 @@ sha256-ssse3-i386.o: $(srcdir)/sha256-ssse3-i386.c Makefile
 	`echo $(COMPILE) -c $< | $(instrumentation_munging) `
 
 sha256-ssse3-i386.lo: $(srcdir)/sha256-ssse3-i386.c Makefile
+	`echo $(LTCOMPILE) -c $< | $(instrumentation_munging) `
+
+sha512-intel-shaext.o: $(srcdir)/sha512-intel-shaext.c Makefile
+	`echo $(COMPILE) -c $< | $(instrumentation_munging) `
+
+sha512-intel-shaext.lo: $(srcdir)/sha512-intel-shaext.c Makefile
 	`echo $(LTCOMPILE) -c $< | $(instrumentation_munging) `
 
 crc-intel-pclmul.o: $(srcdir)/crc-intel-pclmul.c Makefile
@@ -347,7 +357,7 @@ rijndael-vp-aarch64.lo: $(srcdir)/rijndael-vp-aarch64.c Makefile
 	`echo $(LTCOMPILE) $(aarch64_simd_cflags) -c $< | $(instrumentation_munging) `
 
 if ENABLE_X86_AVX512_INTRINSICS_EXTRA_CFLAGS
-avx512f_cflags = -mavx512f
+avx512f_cflags = -mavx512f -mavx512bw
 else
 avx512f_cflags =
 endif
@@ -358,15 +368,14 @@ serpent-avx512-x86.o: $(srcdir)/serpent-avx512-x86.c Makefile
 serpent-avx512-x86.lo: $(srcdir)/serpent-avx512-x86.c Makefile
 	`echo $(LTCOMPILE) $(avx512f_cflags) -c $< | $(instrumentation_munging) `
 
-# Note: -mstrict-align needed for GCC-14 bug (disable unaligned vector loads)
 if ENABLE_RISCV_VECTOR_INTRINSICS_EXTRA_CFLAGS
+# Note: -mstrict-align needed for SpacemiT K1 RVV bug (K1 does not support
+# unaligned vector memory access). This is enabled only for plain RVV
+# implementations, RVV-crypto extension implementations expect CPU with proper
+# support for unaligned vector memory access.
 riscv_vector_cflags = -O2 -march=@MARCH_RVA22U64_WITH_VEC@ -mstrict-align
 else
-if SUPPORT_CC_RISCV_MSTRICT_ALIGN
-riscv_vector_cflags = -O2 -mstrict-align
-else
 riscv_vector_cflags =
-endif
 endif
 
 chacha20-riscv-v.o: $(srcdir)/chacha20-riscv-v.c Makefile
@@ -381,21 +390,14 @@ rijndael-vp-riscv.o: $(srcdir)/rijndael-vp-riscv.c Makefile
 rijndael-vp-riscv.lo: $(srcdir)/rijndael-vp-riscv.c Makefile
 	`echo $(LTCOMPILE) $(riscv_vector_cflags) -c $< | $(instrumentation_munging) `
 
-# Note: -mstrict-align needed for GCC-14 bug (disable unaligned vector loads)
 if ENABLE_RISCV_VECTOR_CRYPTO_INTRINSICS_EXTRA_CFLAGS
-riscv_vector_crypto_aes_cflags = -O2 -march=@MARCH_RVA23U64_BASE@_zvkned -mstrict-align
-riscv_vector_crypto_sha_cflags = -O2 -march=@MARCH_RVA23U64_BASE@_zvknha_zvknhb_zvkb -mstrict-align
-riscv_vector_crypto_gcm_cflags = -O2 -march=@MARCH_RVA23U64_BASE@_zvkg -mstrict-align
-else
-if SUPPORT_CC_RISCV_MSTRICT_ALIGN
-riscv_vector_crypto_aes_cflags = -O2 -mstrict-align
-riscv_vector_crypto_sha_cflags = -O2 -mstrict-align
-riscv_vector_crypto_gcm_cflags = -O2 -mstrict-align
+riscv_vector_crypto_aes_cflags = -O2 -march=@MARCH_RVA23U64_BASE@_zvkned_zvkb
+riscv_vector_crypto_sha_cflags = -O2 -march=@MARCH_RVA23U64_BASE@_zvknha_zvknhb_zvkb
+riscv_vector_crypto_gcm_cflags = -O2 -march=@MARCH_RVA23U64_BASE@_zvkg_zvkb
 else
 riscv_vector_crypto_aes_cflags =
 riscv_vector_crypto_sha_cflags =
 riscv_vector_crypto_gcm_cflags =
-endif
 endif
 
 cipher-gcm-riscv-zvkg.o: $(srcdir)/cipher-gcm-riscv-zvkg.c Makefile

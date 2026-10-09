@@ -597,11 +597,12 @@ static void prefetch_enc(void)
    * of look-up table are shared between processes.  Modifying counters also
    * causes checksums for pages to change and hint same-page merging algorithm
    * that these pages are frequently changing.  */
-  enc_tables.counter_head++;
-  enc_tables.counter_tail++;
+  u32 counter = enc_tables.counter_head + 1;
+  enc_tables.counter_head = counter;
+  enc_tables.counter_tail = counter;
 
   /* Prefetch look-up tables to cache.  */
-  prefetch_table((const void *)&enc_tables, sizeof(enc_tables));
+  prefetch_table((const void *)&enc_tables.T[0], sizeof(enc_tables.T));
 }
 
 static void prefetch_dec(void)
@@ -610,11 +611,13 @@ static void prefetch_dec(void)
    * of look-up table are shared between processes.  Modifying counters also
    * causes checksums for pages to change and hint same-page merging algorithm
    * that these pages are frequently changing.  */
-  dec_tables.counter_head++;
-  dec_tables.counter_tail++;
+  u32 counter = dec_tables.counter_head + 1;
+  dec_tables.counter_head = counter;
+  dec_tables.counter_tail = counter;
 
   /* Prefetch look-up tables to cache.  */
-  prefetch_table((const void *)&dec_tables, sizeof(dec_tables));
+  prefetch_table((const void *)&dec_tables.T[0],
+		 sizeof(dec_tables.T) + sizeof(dec_tables.inv_sboxT));
 }
 
 
@@ -688,7 +691,7 @@ do_setkey (RIJNDAEL_context *ctx, const byte *key, const unsigned keylen,
   bulk_ops->cfb_dec = _gcry_aes_cfb_dec;
   bulk_ops->cbc_enc = _gcry_aes_cbc_enc;
   bulk_ops->cbc_dec = _gcry_aes_cbc_dec;
-  bulk_ops->ctr_enc = _gcry_aes_ctr_enc;
+  bulk_ops->ctr16be_enc = _gcry_aes_ctr_enc;
   bulk_ops->ocb_crypt = _gcry_aes_ocb_crypt;
   bulk_ops->ocb_auth  = _gcry_aes_ocb_auth;
   bulk_ops->xts_crypt = _gcry_aes_xts_crypt;
@@ -716,7 +719,7 @@ do_setkey (RIJNDAEL_context *ctx, const byte *key, const unsigned keylen,
       bulk_ops->cfb_dec = _gcry_aes_aesni_cfb_dec;
       bulk_ops->cbc_enc = _gcry_aes_aesni_cbc_enc;
       bulk_ops->cbc_dec = _gcry_aes_aesni_cbc_dec;
-      bulk_ops->ctr_enc = _gcry_aes_aesni_ctr_enc;
+      bulk_ops->ctr16be_enc = _gcry_aes_aesni_ctr_enc;
       bulk_ops->ctr32le_enc = _gcry_aes_aesni_ctr32le_enc;
       bulk_ops->ocb_crypt = _gcry_aes_aesni_ocb_crypt;
       bulk_ops->ocb_auth = _gcry_aes_aesni_ocb_auth;
@@ -734,7 +737,7 @@ do_setkey (RIJNDAEL_context *ctx, const byte *key, const unsigned keylen,
 	  /* Setup VAES bulk encryption routines.  */
 	  bulk_ops->cfb_dec = _gcry_aes_vaes_cfb_dec;
 	  bulk_ops->cbc_dec = _gcry_aes_vaes_cbc_dec;
-	  bulk_ops->ctr_enc = _gcry_aes_vaes_ctr_enc;
+	  bulk_ops->ctr16be_enc = _gcry_aes_vaes_ctr_enc;
 	  bulk_ops->ctr32le_enc = _gcry_aes_vaes_ctr32le_enc;
 	  bulk_ops->ocb_crypt = _gcry_aes_vaes_ocb_crypt;
 	  bulk_ops->ocb_auth = _gcry_aes_vaes_ocb_auth;
@@ -749,7 +752,7 @@ do_setkey (RIJNDAEL_context *ctx, const byte *key, const unsigned keylen,
 	  /* Setup VAES bulk encryption routines.  */
 	  bulk_ops->cfb_dec = _gcry_aes_vaes_cfb_dec;
 	  bulk_ops->cbc_dec = _gcry_aes_vaes_cbc_dec;
-	  bulk_ops->ctr_enc = _gcry_aes_vaes_ctr_enc;
+	  bulk_ops->ctr16be_enc = _gcry_aes_vaes_ctr_enc;
 	  bulk_ops->ctr32le_enc = _gcry_aes_vaes_ctr32le_enc;
 	  bulk_ops->ocb_crypt = _gcry_aes_vaes_ocb_crypt;
 	  bulk_ops->ocb_auth = _gcry_aes_vaes_ocb_auth;
@@ -785,7 +788,7 @@ do_setkey (RIJNDAEL_context *ctx, const byte *key, const unsigned keylen,
       bulk_ops->cfb_dec = _gcry_aes_ssse3_cfb_dec;
       bulk_ops->cbc_enc = _gcry_aes_ssse3_cbc_enc;
       bulk_ops->cbc_dec = _gcry_aes_ssse3_cbc_dec;
-      bulk_ops->ctr_enc = _gcry_aes_ssse3_ctr_enc;
+      bulk_ops->ctr16be_enc = _gcry_aes_ssse3_ctr_enc;
       bulk_ops->ocb_crypt = _gcry_aes_ssse3_ocb_crypt;
       bulk_ops->ocb_auth = _gcry_aes_ssse3_ocb_auth;
     }
@@ -805,7 +808,7 @@ do_setkey (RIJNDAEL_context *ctx, const byte *key, const unsigned keylen,
       bulk_ops->cfb_dec = _gcry_aes_armv8_ce_cfb_dec;
       bulk_ops->cbc_enc = _gcry_aes_armv8_ce_cbc_enc;
       bulk_ops->cbc_dec = _gcry_aes_armv8_ce_cbc_dec;
-      bulk_ops->ctr_enc = _gcry_aes_armv8_ce_ctr_enc;
+      bulk_ops->ctr16be_enc = _gcry_aes_armv8_ce_ctr_enc;
       bulk_ops->ctr32le_enc = _gcry_aes_armv8_ce_ctr32le_enc;
       bulk_ops->ocb_crypt = _gcry_aes_armv8_ce_ocb_crypt;
       bulk_ops->ocb_auth = _gcry_aes_armv8_ce_ocb_auth;
@@ -828,7 +831,7 @@ do_setkey (RIJNDAEL_context *ctx, const byte *key, const unsigned keylen,
       bulk_ops->cfb_dec = _gcry_aes_vp_aarch64_cfb_dec;
       bulk_ops->cbc_enc = _gcry_aes_vp_aarch64_cbc_enc;
       bulk_ops->cbc_dec = _gcry_aes_vp_aarch64_cbc_dec;
-      bulk_ops->ctr_enc = _gcry_aes_vp_aarch64_ctr_enc;
+      bulk_ops->ctr16be_enc = _gcry_aes_vp_aarch64_ctr_enc;
       bulk_ops->ctr32le_enc = _gcry_aes_vp_aarch64_ctr32le_enc;
       bulk_ops->ocb_crypt = _gcry_aes_vp_aarch64_ocb_crypt;
       bulk_ops->ocb_auth = _gcry_aes_vp_aarch64_ocb_auth;
@@ -840,6 +843,7 @@ do_setkey (RIJNDAEL_context *ctx, const byte *key, const unsigned keylen,
     else if ((hwfeatures & HWF_RISCV_IMAFDC)
 	     && (hwfeatures & HWF_RISCV_B)      /* Mandatory in RVA23U64 */
 	     && (hwfeatures & HWF_RISCV_V)      /* Mandatory in RVA23U64 */
+	     && (hwfeatures & HWF_RISCV_ZVKB)   /* Mandatory in RVA23U64 (Zvbb) */
 	     && (hwfeatures & HWF_RISCV_ZVKNED) /* Optional in RVA23U64 */
 	     && _gcry_aes_riscv_zvkned_setup_acceleration(ctx))
     {
@@ -855,7 +859,7 @@ do_setkey (RIJNDAEL_context *ctx, const byte *key, const unsigned keylen,
       bulk_ops->cfb_dec = _gcry_aes_riscv_zvkned_cfb_dec;
       bulk_ops->cbc_enc = _gcry_aes_riscv_zvkned_cbc_enc;
       bulk_ops->cbc_dec = _gcry_aes_riscv_zvkned_cbc_dec;
-      bulk_ops->ctr_enc = _gcry_aes_riscv_zvkned_ctr_enc;
+      bulk_ops->ctr16be_enc = _gcry_aes_riscv_zvkned_ctr_enc;
       bulk_ops->ctr32le_enc = _gcry_aes_riscv_zvkned_ctr32le_enc;
       bulk_ops->ocb_crypt = _gcry_aes_riscv_zvkned_ocb_crypt;
       bulk_ops->ocb_auth = _gcry_aes_riscv_zvkned_ocb_auth;
@@ -881,7 +885,7 @@ do_setkey (RIJNDAEL_context *ctx, const byte *key, const unsigned keylen,
       bulk_ops->cfb_dec = _gcry_aes_vp_riscv_cfb_dec;
       bulk_ops->cbc_enc = _gcry_aes_vp_riscv_cbc_enc;
       bulk_ops->cbc_dec = _gcry_aes_vp_riscv_cbc_dec;
-      bulk_ops->ctr_enc = _gcry_aes_vp_riscv_ctr_enc;
+      bulk_ops->ctr16be_enc = _gcry_aes_vp_riscv_ctr_enc;
       bulk_ops->ctr32le_enc = _gcry_aes_vp_riscv_ctr32le_enc;
       bulk_ops->ocb_crypt = _gcry_aes_vp_riscv_ocb_crypt;
       bulk_ops->ocb_auth = _gcry_aes_vp_riscv_ocb_auth;
@@ -905,7 +909,7 @@ do_setkey (RIJNDAEL_context *ctx, const byte *key, const unsigned keylen,
       bulk_ops->cfb_dec = _gcry_aes_ppc9le_cfb_dec;
       bulk_ops->cbc_enc = _gcry_aes_ppc9le_cbc_enc;
       bulk_ops->cbc_dec = _gcry_aes_ppc9le_cbc_dec;
-      bulk_ops->ctr_enc = _gcry_aes_ppc9le_ctr_enc;
+      bulk_ops->ctr16be_enc = _gcry_aes_ppc9le_ctr_enc;
       bulk_ops->ocb_crypt = _gcry_aes_ppc9le_ocb_crypt;
       bulk_ops->ocb_auth = _gcry_aes_ppc9le_ocb_auth;
       bulk_ops->xts_crypt = _gcry_aes_ppc9le_xts_crypt;
@@ -936,7 +940,7 @@ do_setkey (RIJNDAEL_context *ctx, const byte *key, const unsigned keylen,
       bulk_ops->cfb_dec = _gcry_aes_ppc8_cfb_dec;
       bulk_ops->cbc_enc = _gcry_aes_ppc8_cbc_enc;
       bulk_ops->cbc_dec = _gcry_aes_ppc8_cbc_dec;
-      bulk_ops->ctr_enc = _gcry_aes_ppc8_ctr_enc;
+      bulk_ops->ctr16be_enc = _gcry_aes_ppc8_ctr_enc;
       bulk_ops->ocb_crypt = _gcry_aes_ppc8_ocb_crypt;
       bulk_ops->ocb_auth = _gcry_aes_ppc8_ocb_auth;
       bulk_ops->xts_crypt = _gcry_aes_ppc8_xts_crypt;
@@ -1345,7 +1349,7 @@ _gcry_aes_ctr_enc (void *context, unsigned char *ctr,
       outbuf += BLOCKSIZE;
       inbuf  += BLOCKSIZE;
       /* Increment the counter.  */
-      cipher_block_add(ctr, 1, BLOCKSIZE);
+      cipher_block_add_be16(ctr, 1, BLOCKSIZE);
     }
 
   wipememory(&tmp, sizeof(tmp));
@@ -2046,10 +2050,12 @@ selftest_fips_128_38a (int requested_mode)
   if (tvi == DIM (tv))
     Fail ("no test data for this mode");
 
-  err = _gcry_cipher_open (&hdenc, GCRY_CIPHER_AES, tv[tvi].mode, 0);
+  err = _gcry_cipher_open_internal (&hdenc, GCRY_CIPHER_AES, tv[tvi].mode, 0,
+				    0);
   if (err)
     Fail ("open");
-  err = _gcry_cipher_open (&hddec, GCRY_CIPHER_AES, tv[tvi].mode, 0);
+  err = _gcry_cipher_open_internal (&hddec, GCRY_CIPHER_AES, tv[tvi].mode, 0,
+				    0);
   if (err)
     Fail ("open");
   err = _gcry_cipher_setkey (hdenc, tv[tvi].key,  sizeof tv[tvi].key);

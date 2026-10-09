@@ -627,11 +627,12 @@ prefetch_sboxes(void)
    * of look-up table are shared between processes.  Modifying counters also
    * causes checksums for pages to change and hint same-page merging algorithm
    * that these pages are frequently changing.  */
-  sboxes.counter_head++;
-  sboxes.counter_tail++;
+  u32 counter = sboxes.counter_head + 1;
+  sboxes.counter_head = counter;
+  sboxes.counter_tail = counter;
 
   /* Prefetch look-up tables to cache.  */
-  prefetch_table((const void *)&sboxes, sizeof(sboxes));
+  prefetch_table((const void *)&sboxes.s1[0], sizeof(sboxes.s1) * 4);
 }
 
 
@@ -1655,7 +1656,7 @@ aria_setkey(void *c, const byte *key, unsigned keylen,
   bulk_ops->cbc_dec = _gcry_aria_cbc_dec;
   bulk_ops->cfb_enc = _gcry_aria_cfb_enc;
   bulk_ops->cfb_dec = _gcry_aria_cfb_dec;
-  bulk_ops->ctr_enc = _gcry_aria_ctr_enc;
+  bulk_ops->ctr16be_enc = _gcry_aria_ctr_enc;
   bulk_ops->ctr32le_enc = _gcry_aria_ctr32le_enc;
   bulk_ops->ecb_crypt = _gcry_aria_ecb_crypt;
   bulk_ops->xts_crypt = _gcry_aria_xts_crypt;

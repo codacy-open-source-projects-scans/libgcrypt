@@ -42,7 +42,7 @@ _gcry_cmac_write (gcry_cipher_hd_t c, gcry_cmac_context_t *ctx,
   size_t blocksize = 1 << blocksize_shift;
   byte outbuf[MAX_BLOCKSIZE];
   unsigned int burn = 0;
-  unsigned int nblocks;
+  size_t nblocks;
   size_t n;
 
   if (ctx->tag)
@@ -216,8 +216,10 @@ cmac_tag (gcry_cipher_hd_t c, gcry_cmac_context_t *ctx,
 {
   gcry_err_code_t ret;
 
-  if (!tag || taglen == 0 || taglen > c->spec->blocksize)
+  if (!tag)
     return GPG_ERR_INV_ARG;
+  if (taglen == 0 || taglen > c->spec->blocksize)
+    return GPG_ERR_INV_LENGTH;
 
   if (!ctx->tag)
     {

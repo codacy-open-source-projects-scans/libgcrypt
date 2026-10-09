@@ -196,8 +196,8 @@ typedef struct cipher_bulk_ops
 		  const void *inbuf_arg, size_t nblocks);
   void (*ofb_enc)(void *context, unsigned char *iv, void *outbuf_arg,
 		  const void *inbuf_arg, size_t nblocks);
-  void (*ctr_enc)(void *context, unsigned char *iv, void *outbuf_arg,
-		  const void *inbuf_arg, size_t nblocks);
+  void (*ctr16be_enc)(void *context, unsigned char *iv, void *outbuf_arg,
+		      const void *inbuf_arg, size_t nblocks);
   void (*ctr32le_enc)(void *context, unsigned char *iv, void *outbuf_arg,
 		      const void *inbuf_arg, size_t nblocks);
   size_t (*ocb_crypt)(gcry_cipher_hd_t c, void *outbuf_arg,
@@ -804,18 +804,30 @@ static inline unsigned int _gcry_blocksize_shift(gcry_cipher_hd_t c)
 {
   /* Only blocksizes 8 and 16 are used. Return value in such way
    * that compiler can optimize calling functions based on this.  */
-  return c->spec->blocksize == 8 ? 3 : 4;
+  return UNLIKELY(c->spec->blocksize == 8) ? 3 : 4;
 }
 
 
-/* Optimized function for adding value to cipher block. */
+/* Add 32-bit or 64-bit size_t to 2x32-bit byte counter. */
+static inline int
+cipher_bytecounter_add (u32 ctr[2], size_t add)
+{
+  u64 bytecounter = ((u64)ctr[1] << 32) + ctr[0];
+  bytecounter += add;
+  ctr[0] = bytecounter;
+  ctr[1] = bytecounter >> 32;
+  return bytecounter < add;
+}
+
+
+/* Optimized function for block-size big-endian addition. */
 static inline void
-cipher_block_add(void *_dstsrc, unsigned int add, size_t blocksize)
+cipher_block_add(void *_dstsrc, u64 add, size_t blocksize)
 {
   byte *dstsrc = _dstsrc;
   u64 s[2];
 
-  if (blocksize == 8)
+  if (UNLIKELY(blocksize == 8))
     {
       buf_put_be64(dstsrc + 0, buf_get_be64(dstsrc + 0) + add);
     }
@@ -831,6 +843,19 @@ cipher_block_add(void *_dstsrc, unsigned int add, size_t blocksize)
 }
 
 
+/* Optimized function for 16-bit big-endian addition to cipher block. */
+static inline void
+cipher_block_add_be16(void *_dstsrc, unsigned int add, size_t blocksize)
+{
+  byte *dstsrc = _dstsrc;
+
+  add += dstsrc[blocksize - 1];
+  add += dstsrc[blocksize - 2] << 8;
+  dstsrc[blocksize - 1] = add;
+  dstsrc[blocksize - 2] = add >> 8;
+}
+
+
 /* Optimized function for cipher block copying */
 static inline void
 cipher_block_cpy(void *_dst, const void *_src, size_t blocksize)
@@ -839,7 +864,7 @@ cipher_block_cpy(void *_dst, const void *_src, size_t blocksize)
   const byte *src = _src;
   u64 s[2];
 
-  if (blocksize == 8)
+  if (UNLIKELY(blocksize == 8))
     {
       buf_put_he64(dst + 0, buf_get_he64(src + 0));
     }
@@ -864,7 +889,7 @@ cipher_block_xor(void *_dst, const void *_src1, const void *_src2,
   u64 s1[2];
   u64 s2[2];
 
-  if (blocksize == 8)
+  if (UNLIKELY(blocksize == 8))
     {
       buf_put_he64(dst + 0, buf_get_he64(src1 + 0) ^ buf_get_he64(src2 + 0));
     }
@@ -900,7 +925,7 @@ cipher_block_xor_2dst(void *_dst1, void *_dst2, const void *_src,
   u64 d2[2];
   u64 s[2];
 
-  if (blocksize == 8)
+  if (UNLIKELY(blocksize == 8))
     {
       d2[0] = buf_get_he64(dst2 + 0) ^ buf_get_he64(src + 0);
       buf_put_he64(dst2 + 0, d2[0]);
@@ -937,7 +962,7 @@ cipher_block_xor_n_copy_2(void *_dst_xor, const void *_src_xor,
   u64 sx[2];
   u64 sdc[2];
 
-  if (blocksize == 8)
+  if (UNLIKELY(blocksize == 8))
     {
       sc[0] = buf_get_he64(src_cpy + 0);
       buf_put_he64(dst_xor + 0,
@@ -971,7 +996,7 @@ cipher_block_bswap (void *_dst_bswap, const void *_src_bswap,
   const byte *src_bswap = _src_bswap;
   u64 t[2];
 
-  if (blocksize == 8)
+  if (UNLIKELY(blocksize == 8))
     {
       buf_put_le64(dst_bswap, buf_get_be64(src_bswap));
     }

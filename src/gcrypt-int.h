@@ -36,6 +36,18 @@
 struct mpi_ec_ctx_s;
 typedef struct mpi_ec_ctx_s *mpi_ec_t;
 
+/* Object used to request and return additional data from
+ * _gcry_kem_genkey.  This is pretty simple for now but may eventually
+ * be used to request other data.  */
+struct kem_genkey_extra_data_s
+{
+  struct {
+    unsigned int seed:1;  /* If set SEED will be returned.  */
+  } request;
+  void *seed;      /* Will receive the used seed - caller must free.  */
+  size_t seedlen;  /* And the length.  */
+};
+
 
 
 /* Underscore prefixed internal versions of the public functions.
@@ -49,6 +61,10 @@ typedef struct mpi_ec_ctx_s *mpi_ec_t;
 
 gpg_err_code_t _gcry_cipher_open (gcry_cipher_hd_t *handle,
                                   int algo, int mode, unsigned int flags);
+gcry_err_code_t _gcry_cipher_open_internal (gcry_cipher_hd_t *handle,
+                                            int algo, int mode,
+                                            unsigned int flags,
+                                            int fast_rnd_poll);
 void _gcry_cipher_close (gcry_cipher_hd_t h);
 gpg_err_code_t _gcry_cipher_ctl (gcry_cipher_hd_t h, int cmd, void *buffer,
                              size_t buflen);
@@ -145,6 +161,8 @@ gpg_err_code_t _gcry_pk_get_single_data (gcry_ctx_t *r_ctx,
                                          size_t *r_len);
 
 gpg_err_code_t _gcry_md_open (gcry_md_hd_t *h, int algo, unsigned int flags);
+gcry_err_code_t _gcry_md_open_internal (gcry_md_hd_t *h, int algo,
+                                        unsigned int flags, int fast_rnd_poll);
 void _gcry_md_close (gcry_md_hd_t hd);
 gpg_err_code_t _gcry_md_enable (gcry_md_hd_t hd, int algo);
 gpg_err_code_t _gcry_md_copy (gcry_md_hd_t *bhd, gcry_md_hd_t ahd);
@@ -237,11 +255,14 @@ gcry_err_code_t _gcry_kdf_compute (gcry_kdf_hd_t h,
 gpg_err_code_t _gcry_kdf_final (gcry_kdf_hd_t h, size_t resultlen, void *result);
 void _gcry_kdf_close (gcry_kdf_hd_t h);
 
+
 
+/* The internal KEM interface.  */
 gcry_err_code_t _gcry_kem_genkey (int algo,
                                   void *pubkey, size_t pubkey_len,
                                   void *seckey, size_t seckey_len,
-                                  const void *optional, size_t optional_len);
+                                  const void *optional, size_t optional_len,
+                                  struct kem_genkey_extra_data_s *extra);
 gcry_err_code_t _gcry_kem_encap (int algo,
                                  const void *pubkey, size_t pubkey_len,
                                  void *ciphertext, size_t ciphertext_len,

@@ -54,7 +54,8 @@ openpgp_s2k (const void *passphrase, size_t passphraselen,
 
   secmode = _gcry_is_secure (passphrase) || _gcry_is_secure (keybuffer);
 
-  ec = _gcry_md_open (&md, hashalgo, secmode? GCRY_MD_FLAG_SECURE : 0);
+  ec = _gcry_md_open_internal (&md, hashalgo,
+                              secmode? GCRY_MD_FLAG_SECURE : 0, 1);
   if (ec)
     return ec;
 
@@ -173,8 +174,9 @@ _gcry_kdf_pkdf2 (const void *passphrase, size_t passphraselen,
   tbuf = sbuf + saltlen + 4;
   ubuf = tbuf + hlen;
 
-  ec = _gcry_md_open (&md, hashalgo, (GCRY_MD_FLAG_HMAC
-                                      | (secmode?GCRY_MD_FLAG_SECURE:0)));
+  ec = _gcry_md_open_internal (&md, hashalgo,
+                               (GCRY_MD_FLAG_HMAC
+                                | (secmode?GCRY_MD_FLAG_SECURE:0)), 1);
   if (ec)
     {
       xfree (sbuf);
@@ -489,6 +491,9 @@ argon2_fill_first_blocks (argon2_ctx_t a)
   return 0;
 }
 
+
+#define ARGON2_PARALLELISM_MAX (16777216-1) /* Section 3.1 of RFC9106 */
+
 static gpg_err_code_t
 argon2_init (argon2_ctx_t a, unsigned int parallelism,
              unsigned int m_cost, unsigned int t_cost)
@@ -499,6 +504,9 @@ argon2_init (argon2_ctx_t a, unsigned int parallelism,
   unsigned int segment_length;
   void *block;
   struct argon2_thread_data *thread_data;
+
+  if (parallelism > ARGON2_PARALLELISM_MAX)
+    return GPG_ERR_INV_VALUE;
 
   memory_blocks = m_cost;
   if (memory_blocks < 8 * parallelism)
@@ -991,7 +999,8 @@ prng_aes_ctr_init (gcry_cipher_hd_t *hd_p, balloon_ctx_t b,
   blklen = _gcry_cipher_get_algo_blklen (cipher_algo);
 
   b->md_spec->hash_buffers (key, b->blklen, iov, iov_count);
-  ec = _gcry_cipher_open (&hd, cipher_algo, GCRY_CIPHER_MODE_CTR, 0);
+  ec = _gcry_cipher_open_internal (&hd, cipher_algo, GCRY_CIPHER_MODE_CTR,
+                                   0, 1);
   if (ec)
     return ec;
 
@@ -1046,6 +1055,9 @@ ballon_context_size (unsigned int parallelism)
     + parallelism * sizeof (struct balloon_thread_data);
   return n;
 }
+
+#define BALLOON_TIMECOST_MAX (16777216-1)
+#define BALLOON_PARALLELISM_MAX (16777216-1)
 
 static gpg_err_code_t
 balloon_open (gcry_kdf_hd_t *hd, int subalgo,
@@ -1121,6 +1133,12 @@ balloon_open (gcry_kdf_hd_t *hd, int subalgo,
   if (s_cost < 1)
     return GPG_ERR_INV_VALUE;
 
+  if (t_cost < 1 || t_cost > BALLOON_TIMECOST_MAX)
+    return GPG_ERR_INV_VALUE;
+
+  if (parallelism < 1  || parallelism > BALLOON_PARALLELISM_MAX)
+    return GPG_ERR_INV_VALUE;
+
   n = ballon_context_size (parallelism);
   b = xtrymalloc (n);
   if (!b)
@@ -1138,7 +1156,7 @@ balloon_open (gcry_kdf_hd_t *hd, int subalgo,
   b->t_cost = t_cost;
   b->parallelism = parallelism;
 
-  b->n_blocks = (s_cost * 1024) / b->blklen;
+  b->n_blocks = (s_cost * U64_C(1024)) / b->blklen;
 
   block = xtrycalloc (parallelism * b->n_blocks, b->blklen);
   if (!block)
@@ -1465,7 +1483,7 @@ onestep_kdf_open (gcry_kdf_hd_t *hd, int hashalgo,
       xfree (o);
       return GPG_ERR_DIGEST_ALGO;
     }
-  ec = _gcry_md_open (&o->md, hashalgo, 0);
+  ec = _gcry_md_open_internal (&o->md, hashalgo, 0, 1);
   if (ec)
     {
       xfree (o);
@@ -1925,7 +1943,7 @@ x963_kdf_open (gcry_kdf_hd_t *hd, int hashalgo,
       xfree (o);
       return GPG_ERR_DIGEST_ALGO;
     }
-  ec = _gcry_md_open (&o->md, hashalgo, 0);
+  ec = _gcry_md_open_internal (&o->md, hashalgo, 0, 1);
   if (ec)
     {
       xfree (o);

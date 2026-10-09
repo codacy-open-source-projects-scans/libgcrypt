@@ -31,6 +31,7 @@
 #include "ec-context.h"
 #include "pubkey-internal.h"
 #include "ecc-common.h"
+#include "const-time.h"
 
 #define MPI_NBYTES(m)   ((mpi_get_nbits(m) + 7) / 8)
 
@@ -49,7 +50,7 @@ kdf_x9_63 (int algo, const void *in, size_t inlen, void *out, size_t outlen)
   size_t rlen = outlen;
   size_t len;
 
-  rc = _gcry_md_open (&hd, algo, 0);
+  rc = _gcry_md_open_internal (&hd, algo, 0, 0);
   if (rc)
     return rc;
 
@@ -174,7 +175,7 @@ _gcry_ecc_sm2_encrypt (gcry_sexp_t *r_ciph, gcry_mpi_t input, mpi_ec_t ec)
 
   /* hash(x2 || IN || y2) */
   mdlen = _gcry_md_get_algo_dlen (algo);
-  rc = _gcry_md_open (&md, algo, 0);
+  rc = _gcry_md_open_internal (&md, algo, 0, 0);
   if (rc)
     goto leave;
   _gcry_md_write (md, raw, MPI_NBYTES(x2));
@@ -317,7 +318,7 @@ _gcry_ecc_sm2_decrypt (gcry_sexp_t *r_plain, gcry_sexp_t data_list, mpi_ec_t ec)
 
     /* Hash(x2 || IN || y2) == C3 */
     mdlen = _gcry_md_get_algo_dlen (algo);
-    rc = _gcry_md_open (&md, algo, 0);
+    rc = _gcry_md_open_internal (&md, algo, 0, 0);
     if (rc)
       goto leave_main;
     _gcry_md_write (md, raw, MPI_NBYTES(x2));
@@ -326,15 +327,15 @@ _gcry_ecc_sm2_decrypt (gcry_sexp_t *r_plain, gcry_sexp_t data_list, mpi_ec_t ec)
     dgst = _gcry_md_read (md, algo);
     if (dgst == NULL)
       {
-        memset (plain, 0, inlen);
+        wipememory (plain, inlen);
         rc = GPG_ERR_DIGEST_ALGO;
         goto leave_main;
       }
     c3 = mpi_get_opaque (data_c3, &c3_len);
     c3_len = (c3_len + 7) / 8;
-    if (c3_len != mdlen || memcmp (dgst, c3, c3_len) != 0)
+    if (c3_len != mdlen || ct_not_memequal (dgst, c3, c3_len))
       {
-        memset (plain, 0, inlen);
+        wipememory (plain, inlen);
         rc = GPG_ERR_INV_DATA;
         goto leave_main;
       }
