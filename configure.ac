@@ -31,7 +31,7 @@ min_automake_version="1.14"
 m4_define([mym4_package],[libgcrypt])
 m4_define([mym4_major], [1])
 m4_define([mym4_minor], [12])
-m4_define([mym4_micro], [4])
+m4_define([mym4_micro], [5])
 
 # Below is m4 magic to extract and compute the git revision number,
 # the decimalized short revision number, a beta version string and a
@@ -552,7 +552,7 @@ AC_ARG_ENABLE(large-data-tests,
 AC_MSG_RESULT($large_data_tests)
 AC_SUBST(RUN_LARGE_DATA_TESTS, $large_data_tests)
 
-# Implementation of --enable-force-soft-hwfeatures
+# Implementation of --enable-forgce-soft-hwfeatures
 AC_MSG_CHECKING([whether 'soft' HW feature bits are forced on])
 AC_ARG_ENABLE([force-soft-hwfeatures],
               AS_HELP_STRING([--enable-force-soft-hwfeatures],
@@ -2983,6 +2983,7 @@ m4_define([GCRY_RISCV_VECTOR_CRYPTO_INTRINSICS_TEST],
 	vuint32m1_t m;
 	vuint32m1_t idx = __riscv_vid_v_u32m1 (vl);
 	vbool32_t merge_mask = __riscv_vmseq_vx_u32m1_b32 (idx, 0, vl);
+	vuint64m1_t c, d, w4;
 	a = __riscv_vsha2cl_vv_u32m1(a, b, w0, vl);
 	b = __riscv_vsha2ch_vv_u32m1(a, b, w0, vl);
 	m = __riscv_vmerge_vvm_u32m1(w2, w1, merge_mask, vl);
@@ -2993,6 +2994,14 @@ m4_define([GCRY_RISCV_VECTOR_CRYPTO_INTRINSICS_TEST],
 	__riscv_vse32_v_u32m1(ptr + 3 * vl, w1, vl);
 	__riscv_vse32_v_u32m1(ptr + 4 * vl, w2, vl);
 	__riscv_vse32_v_u32m1(ptr + 5 * vl, w3, vl);
+	vl = __riscv_vsetvl_e64m1 (4);
+	c = __riscv_vle64_v_u64m1((void *)(ptr + 0 * vl), vl);
+	d = __riscv_vle64_v_u64m1((void *)(ptr + 2 * vl), vl);
+	w4 = __riscv_vle64_v_u64m1((void *)(ptr + 4 * vl), vl);
+	c = __riscv_vsha2cl_vv_u64m1(c, d, w4, vl);
+	d = __riscv_vsha2ch_vv_u64m1(c, d, w4, vl);
+	__riscv_vse64_v_u64m1((void *)(ptr + 0 * vl), c, vl);
+	__riscv_vse64_v_u64m1((void *)(ptr + 2 * vl), d, vl);
       }
       void test_aes_key(unsigned int *ptr)
       {
@@ -3029,11 +3038,54 @@ m4_define([GCRY_RISCV_VECTOR_CRYPTO_INTRINSICS_TEST],
 	vuint32m1_t d = __riscv_vghsh_vv_u32m1(a, b, c, vl);
 	__riscv_vse32_v_u32m1(ptr + 0 * vl, d, vl);
       }
+      void test_clmul(unsigned int *ptr)
+      {
+	int vl = __riscv_vsetvl_e64m1 (2);
+	vuint64m1_t a = __riscv_vle64_v_u64m1((void *)(ptr + 0 * vl), vl);
+	vuint64m1_t b = __riscv_vle64_v_u64m1((void *)(ptr + 2 * vl), vl);
+	vuint64m1_t c = __riscv_vclmul_vv_u64m1(a, b, vl);
+	__riscv_vse64_v_u64m1((void *)(ptr + 0 * vl), c, vl);
+      }
+      void test_sm3(unsigned int *ptr)
+      {
+	int vl = __riscv_vsetvl_e32m2 (8);
+	vuint32m2_t a = __riscv_vle32_v_u32m2(ptr + 0 * vl, vl);
+	vuint32m2_t b = __riscv_vle32_v_u32m2(ptr + 1 * vl, vl);
+	vuint32m2_t c = __riscv_vsm3me_vv_u32m2(a, b, vl);
+	vuint32m2_t d = __riscv_vsm3c_vi_u32m2(a, c, 31, vl);
+	vuint32m1_t e, f, g;
+	__riscv_vse32_v_u32m2(ptr + 0 * vl, d, vl);
+	vl = __riscv_vsetvl_e32m1 (8);
+	e = __riscv_vle32_v_u32m1(ptr + 0 * vl, vl);
+	f = __riscv_vle32_v_u32m1(ptr + 1 * vl, vl);
+	g = __riscv_vsm3me_vv_u32m1(e, f, vl);
+	e = __riscv_vsm3c_vi_u32m1(e, g, 31, vl);
+	__riscv_vse32_v_u32m1(ptr + 0 * vl, e, vl);
+      }
+      void test_sm4(unsigned int *ptr)
+      {
+	int vl = __riscv_vsetvl_e32m4 (16);
+	vuint32m1_t a = __riscv_vle32_v_u32m1(ptr + 0 * vl, 4);
+	vuint32m4_t b = __riscv_vle32_v_u32m4(ptr + 1 * vl, vl);
+	vuint32m1_t c = __riscv_vsm4k_vi_u32m1(a, 7, 4);
+	vuint32m4_t d = __riscv_vsm4r_vs_u32m1_u32m4(b, c, vl);
+	__riscv_vse32_v_u32m4(ptr + 0 * vl, d, vl);
+      }
       void test_rev8(unsigned int *ptr)
       {
 	int vl = __riscv_vsetvl_e32m1 (4);
 	vuint32m1_t a = __riscv_vle32_v_u32m1(ptr + 0 * vl, vl);
 	vuint32m1_t b = __riscv_vrev8_v_u32m1(a, vl);
+	__riscv_vse32_v_u32m1(ptr + 0 * vl, b, vl);
+      }
+      void test_rotate(unsigned int *ptr)
+      {
+	int vl = __riscv_vsetvl_e32m1 (4);
+	vuint32m1_t a = __riscv_vle32_v_u32m1(ptr + 0 * vl, vl);
+	vuint32m1_t b = __riscv_vror_vx_u32m1(a, 3, vl);
+	b = __riscv_vror_vv_u32m1(b, a, vl);
+	b = __riscv_vrol_vx_u32m1(b, 3, vl);
+	b = __riscv_vrol_vv_u32m1(b, a, vl);
 	__riscv_vse32_v_u32m1(ptr + 0 * vl, b, vl);
       }
       void test_inline_vec_asm(unsigned int *ptr)
@@ -3057,7 +3109,11 @@ m4_define([GCRY_RISCV_VECTOR_CRYPTO_INTRINSICS_TEST],
 	test_aes_key(buf);
 	test_aes_crypt(buf);
 	test_ghash(buf);
+	test_clmul(buf);
+	test_sm3(buf);
+	test_sm4(buf);
 	test_rev8(buf);
+	test_rotate(buf);
 	test_inline_vec_asm(buf);
 	return 0;
       }
@@ -3089,7 +3145,7 @@ if test "$gcry_cv_cc_riscv_zicclsm_enabled" = "yes" ; then
 else
   MARCH_RVA23U64_BASE=${MARCH_RVA22U64_WITH_VEC}
 fi
-MARCH_RVA23U64_WITH_VEC_CRYPTO=${MARCH_RVA23U64_BASE}_zvbc_zvkb_zvkg_zvkn_zvks
+MARCH_RVA23U64_WITH_VEC_CRYPTO=${MARCH_RVA23U64_BASE}_zvbc_zvkb_zvkg_zvkn_zvks_zvl256b
 AC_SUBST([MARCH_RVA23U64_BASE])
 CFLAGS="$CFLAGS -O2 -march=$MARCH_RVA23U64_WITH_VEC_CRYPTO"
 
@@ -3211,6 +3267,56 @@ EOF
   if test "$gcry_cv_riscv_vaes_vs_intrinsics_work" = "no"; then
     AC_DEFINE([HAVE_BROKEN_VAES_VS_INTRINSIC], [1],
 	      [Define to 1 if __riscv_vaes*_vs intrinsics are broken])
+  fi
+
+  # Restore flags.
+  CFLAGS=$_gcc_cflags_save;
+fi
+
+#
+# Check whether compiler has working RISC-V vector __riscv_vsm4r_vs intrinsics
+#
+# Same GCC issue as with __riscv_vaes*_vs intrinsics above, 'vsetvli' is
+# generated with 'm1' LMUL instead of 'mX' for __riscv_vsm4r_vs_u32m1_u32mX.
+#
+if test "$gcry_cv_cc_riscv_vector_crypto_intrinsics" = "yes" ||
+   test "$gcry_cv_cc_riscv_vector_crypto_intrinsics_cflags" = "yes"; then
+
+  # Setup flags for test.
+  _gcc_cflags_save=$CFLAGS
+  if test "$gcry_cv_cc_riscv_vector_crypto_intrinsics_cflags" = "yes"; then
+    CFLAGS="$CFLAGS -O2 -march=$MARCH_RVA23U64_WITH_VEC_CRYPTO"
+  else
+    CFLAGS="$CFLAGS -O2"
+  fi
+
+  # Disable LTO optimization for following check to generate
+  # RISC-V instructions in compiler output
+  CFLAGS="$CFLAGS -fno-lto"
+
+  AC_CACHE_CHECK([whether compiler has working RISC-V __riscv_vsm4r_vs intrinsics],
+    [gcry_cv_riscv_vsm4r_vs_intrinsics_work],
+    [gcry_cv_riscv_vsm4r_vs_intrinsics_work=no
+     cat > conftest.c <<EOF
+#include <riscv_vector.h>
+vuint32m4_t test_fn(vuint32m4_t a, vuint32m1_t b, int vl)
+{
+  /* This intrinsic should result in a 'vsetvli' with m4 */
+  return __riscv_vsm4r_vs_u32m1_u32m4(a, b, vl);
+}
+EOF
+
+    if $CC $CFLAGS -S conftest.c -o conftest.s >&5 2>&5; then
+      if grep -E 'vsetvli.*,[[[:space:]]]*m4[[[:space:]]]*,' conftest.s >/dev/null 2>&1; then
+	gcry_cv_riscv_vsm4r_vs_intrinsics_work=yes
+      fi
+    fi
+    rm -f conftest.*
+  ])
+
+  if test "$gcry_cv_riscv_vsm4r_vs_intrinsics_work" = "no"; then
+    AC_DEFINE([HAVE_BROKEN_VSM4R_VS_INTRINSIC], [1],
+	      [Define to 1 if __riscv_vsm4r_vs intrinsics are broken])
   fi
 
   # Restore flags.
@@ -3690,6 +3796,9 @@ if test "$found" = "1" ; then
       riscv64-*-*)
          # Build with the vector permute SIMD128 implementation
          GCRYPT_ASM_CIPHERS="$GCRYPT_ASM_CIPHERS rijndael-vp-riscv.lo"
+         GCRYPT_ASM_CIPHERS="$GCRYPT_ASM_CIPHERS rijndael-vp-riscv-mf2.lo"
+         GCRYPT_ASM_CIPHERS="$GCRYPT_ASM_CIPHERS rijndael-vp-riscv-mf4.lo"
+         GCRYPT_ASM_CIPHERS="$GCRYPT_ASM_CIPHERS rijndael-vp-riscv-mf8.lo"
 
          # Build with the RISC-V vector cryptography implementation
          GCRYPT_ASM_CIPHERS="$GCRYPT_ASM_CIPHERS rijndael-riscv-zvkned.lo"
@@ -3906,6 +4015,7 @@ if test "$found" = "1" ; then
       riscv64-*-*)
          # Build with the RISC-V vector implementation
          GCRYPT_ASM_CIPHERS="$GCRYPT_ASM_CIPHERS chacha20-riscv-v.lo"
+         GCRYPT_ASM_CIPHERS="$GCRYPT_ASM_CIPHERS chacha20-riscv-zvkb.lo"
       ;;
    esac
 fi
@@ -3934,6 +4044,10 @@ if test "$found" = "1" ; then
       powerpc64le-*-*)
          # Build with the ppc64le vector implementation
          GCRYPT_ASM_CIPHERS="$GCRYPT_ASM_CIPHERS sm4-ppc.lo"
+      ;;
+      riscv64-*-*)
+         # Build with the RISC-V vector cryptography implementation
+         GCRYPT_ASM_CIPHERS="$GCRYPT_ASM_CIPHERS sm4-riscv-zvksed-zvkb.lo"
       ;;
    esac
 fi
@@ -4166,6 +4280,7 @@ if test "$found" = "1" ; then
       riscv64-*-*)
          # Build with the RISC-V vector cryptography implementation
          GCRYPT_ASM_DIGESTS="$GCRYPT_ASM_DIGESTS sha512-riscv-zvknhb-zvkb.lo"
+         GCRYPT_ASM_DIGESTS="$GCRYPT_ASM_DIGESTS sha512-riscv-zvknhb-zvkb-m1.lo"
       ;;
    esac
 
@@ -4247,6 +4362,11 @@ if test "$found" = "1" ; then
         GCRYPT_ASM_DIGESTS="$GCRYPT_ASM_DIGESTS sm3-aarch64.lo"
         GCRYPT_ASM_DIGESTS="$GCRYPT_ASM_DIGESTS sm3-armv8-aarch64-ce.lo"
      ;;
+     riscv64-*-*)
+        # Build with the RISC-V vector cryptography implementation
+        GCRYPT_ASM_DIGESTS="$GCRYPT_ASM_DIGESTS sm3-riscv-zvksh-zvkb.lo"
+        GCRYPT_ASM_DIGESTS="$GCRYPT_ASM_DIGESTS sm3-riscv-zvksh-zvkb-m1.lo"
+     ;;
    esac
 fi
 
@@ -4271,6 +4391,10 @@ case "${host}" in
   aarch64-*-*)
     # Build with the assembly implementation
     GCRYPT_ASM_DIGESTS="$GCRYPT_ASM_DIGESTS sha1-armv8-aarch64-ce.lo"
+  ;;
+  riscv64-*-*)
+    # Build with the RISC-V vector implementation
+    GCRYPT_ASM_DIGESTS="$GCRYPT_ASM_DIGESTS sha1-riscv-zvkb.lo"
   ;;
 esac
 
@@ -4310,6 +4434,9 @@ case "${host}" in
   ;;
   x86_64-*-*)
     GCRYPT_ASM_DIGESTS="$GCRYPT_ASM_DIGESTS poly1305-amd64-avx512.lo"
+  ;;
+  riscv64-*-*)
+    GCRYPT_ASM_DIGESTS="$GCRYPT_ASM_DIGESTS poly1305-riscv-v.lo"
   ;;
   powerpc64le-*-*)
     # Build with the assembly implementation

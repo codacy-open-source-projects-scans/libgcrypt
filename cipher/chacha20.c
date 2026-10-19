@@ -120,6 +120,13 @@
 # define USE_RISCV_V 1
 #endif
 
+/* USE_RISCV_ZVKB indicates whether to enable RISC-V Zvkb extension code. */
+#undef USE_RISCV_ZVKB
+#if defined (USE_RISCV_V) \
+    && defined(HAVE_COMPATIBLE_CC_RISCV_VECTOR_CRYPTO_INTRINSICS)
+# define USE_RISCV_ZVKB 1
+#endif
+
 /* Assembly implementations use SystemV ABI, ABI conversion and additional
  * stack to store XMM6-XMM15 needed on Win64. */
 #undef ASM_FUNC_ABI
@@ -148,6 +155,7 @@ typedef struct CHACHA20_context_s
   unsigned int use_p10:1;
   unsigned int use_s390x:1;
   unsigned int use_riscv_v:1;
+  unsigned int use_riscv_zvkb:1;
 } CHACHA20_context_t;
 
 
@@ -272,13 +280,21 @@ unsigned int _gcry_chacha20_poly1305_aarch64_blocks4(
 
 #ifdef USE_RISCV_V
 
-unsigned int _gcry_chacha20_riscv_v_blocks(u32 *state, byte *dst,
-					   const byte *src,
-					   size_t nblks);
+size_t _gcry_chacha20_riscv_v_blocks(u32 *state, byte *dst,
+				     const byte *src,
+				     size_t nblks);
 
 unsigned int _gcry_chacha20_riscv_v_check_hw(void);
 
 #endif /* USE_RISCV_V */
+
+#ifdef USE_RISCV_ZVKB
+
+size_t _gcry_chacha20_riscv_zvkb_blocks(u32 *state, byte *dst,
+					const byte *src,
+					size_t nblks);
+
+#endif /* USE_RISCV_ZVKB */
 
 
 static const char *selftest (void);
@@ -446,10 +462,29 @@ chacha20_blocks (CHACHA20_context_t *ctx, byte *dst, const byte *src,
     }
 #endif
 
-#ifdef USE_RISCV_V
-  if (ctx->use_riscv_v)
+#ifdef USE_RISCV_ZVKB
+  if (ctx->use_riscv_zvkb && nblks >= 4)
     {
-      return _gcry_chacha20_riscv_v_blocks(ctx->input, dst, src, nblks);
+      size_t done = _gcry_chacha20_riscv_zvkb_blocks(ctx->input, dst, src,
+						     nblks);
+      dst += CHACHA20_BLOCK_SIZE * done;
+      src += CHACHA20_BLOCK_SIZE * done;
+      nblks -= done;
+      if (nblks == 0)
+	return burn;
+    }
+#endif
+
+#ifdef USE_RISCV_V
+  if (ctx->use_riscv_v && nblks >= 4)
+    {
+      size_t done = _gcry_chacha20_riscv_v_blocks(ctx->input, dst, src,
+						  nblks);
+      dst += CHACHA20_BLOCK_SIZE * done;
+      src += CHACHA20_BLOCK_SIZE * done;
+      nblks -= done;
+      if (nblks == 0)
+	return burn;
     }
 #endif
 
@@ -607,6 +642,11 @@ chacha20_do_setkey (CHACHA20_context_t *ctx,
 		     && (features & HWF_RISCV_B) /* Mandatory in RVA22U64 */
 		     && (features & HWF_RISCV_V) /* Optional in RVA22U64 */
 		     && _gcry_chacha20_riscv_v_check_hw();
+#endif
+#ifdef USE_RISCV_ZVKB
+  ctx->use_riscv_zvkb =
+	      ctx->use_riscv_v
+	      && (features & HWF_RISCV_ZVKB) /* Mandatory in RVA23U64 (Zvbb) */;
 #endif
 
   (void)features;

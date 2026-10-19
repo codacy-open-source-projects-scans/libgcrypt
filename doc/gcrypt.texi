@@ -618,11 +618,14 @@ are
 @item riscv-v
 @item riscv-zbb
 @item riscv-zbc
+@item riscv-zvbc
 @item riscv-zvkb
 @item riscv-zvkg
 @item riscv-zvkned
 @item riscv-zvknha
 @item riscv-zvknhb
+@item riscv-zvksed
+@item riscv-zvksh
 @end table
 
 To disable a feature for all processes using Libgcrypt 1.6 or newer,
